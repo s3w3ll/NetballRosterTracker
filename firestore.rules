@@ -141,6 +141,38 @@ service cloud.firestore {
       }
 
       // --------------------------------------------------------------------
+      // Game Formats & Positions
+      // --------------------------------------------------------------------
+      
+      /**
+       * @description Manages user-defined game formats.
+       * @path /users/{userId}/gameFormats/{gameFormatId}
+       * @allow (any) User `{userId}` managing their own game formats.
+       * @deny (any) Any other user trying to access these formats.
+       * @principle Enforces document ownership for all operations.
+       */
+      match /gameFormats/{gameFormatId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId); // Simplified for default creation
+        allow update: if isExistingOwner(userId) && isFieldImmutable('userId');
+        allow delete: if isExistingOwner(userId);
+
+        /**
+         * @description Manages positions within a specific game format.
+         * @path /users/{userId}/gameFormats/{gameFormatId}/positions/{positionId}
+         * @allow (any) User `{userId}` managing positions in their own game format.
+         * @deny (any) Any other user trying to access these positions.
+         * @principle Inherits ownership and validates relational integrity.
+         */
+        match /positions/{positionId} {
+          allow get, list: if isOwner(userId);
+          allow create: if isOwner(userId) && isCreatingChildResource('gameFormatId', gameFormatId);
+          allow update: if isExistingOwner(userId) && isFieldImmutable('gameFormatId');
+          allow delete: if isExistingOwner(userId);
+        }
+      }
+
+      // --------------------------------------------------------------------
       // Matches & Match Data
       // --------------------------------------------------------------------
 

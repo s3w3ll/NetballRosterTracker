@@ -4,9 +4,13 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet';
-import { Menu, Zap, PlayCircle } from 'lucide-react';
+import { Menu, Zap, PlayCircle, User } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { useFirebase } from '@/firebase';
+import { initiateAnonymousSignIn } from '@/firebase/non-blocking-login';
+import { useEffect } from 'react';
+import { Avatar, AvatarFallback } from '../ui/avatar';
 
 const navLinks = [
     { href: "/rosters", label: "Rosters" },
@@ -17,6 +21,13 @@ const navLinks = [
 
 export function Header() {
   const pathname = usePathname();
+  const { auth, user, isUserLoading } = useFirebase();
+
+  useEffect(() => {
+    if (!isUserLoading && !user) {
+      initiateAnonymousSignIn(auth);
+    }
+  }, [auth, user, isUserLoading]);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -35,7 +46,7 @@ export function Header() {
                     href={link.href} 
                     className={cn(
                         "transition-colors hover:text-primary",
-                        pathname === link.href ? "text-primary" : "text-muted-foreground"
+                        pathname.startsWith(link.href) ? "text-primary" : "text-muted-foreground"
                     )}
                 >
                     {link.label}
@@ -65,7 +76,7 @@ export function Header() {
                                     href={link.href} 
                                     className={cn(
                                         "px-4 py-2 rounded-md text-base",
-                                        pathname === link.href ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50"
+                                        pathname.startsWith(link.href) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50"
                                     )}
                                 >
                                     {link.label}
@@ -79,13 +90,18 @@ export function Header() {
           </div>
 
 
-        <div className="flex flex-1 items-center justify-end space-x-2">
+        <div className="flex flex-1 items-center justify-end space-x-4">
           <Button asChild>
             <Link href="/games/new">
                 <PlayCircle className="mr-2 h-4 w-4" />
                 New Game
             </Link>
           </Button>
+            <Avatar>
+                <AvatarFallback>
+                    <User className="h-5 w-5 text-muted-foreground" />
+                </AvatarFallback>
+            </Avatar>
         </div>
       </div>
     </header>

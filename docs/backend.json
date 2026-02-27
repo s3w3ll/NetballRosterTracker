@@ -125,23 +125,17 @@
           "description": "Date and time when the match ended.",
           "format": "date-time"
         },
-        "numberOfPeriods": {
-          "type": "number",
-          "description": "Number of periods in the match (e.g., quarters)."
-        },
-        "periodDuration": {
-          "type": "number",
-          "description": "Duration of each period in minutes."
+        "gameFormatId": {
+          "type": "string",
+          "description": "Reference to the GameFormat used for this match."
         }
       },
       "required": [
         "id",
         "userId",
         "team1RosterId",
-        "team2RosterId",
         "startTime",
-        "numberOfPeriods",
-        "periodDuration"
+        "gameFormatId"
       ]
     },
     "MatchPlan": {
@@ -307,6 +301,81 @@
         "userId",
         "settingKey",
         "settingValue"
+      ]
+    },
+    "GameFormat": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "GameFormat",
+      "type": "object",
+      "description": "Defines a configurable game format, including team size, timing rules, and positions.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the game format."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user who owns this game format."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the game format (e.g., 'Standard 7-a-side')."
+        },
+        "teamSize": {
+          "type": "number",
+          "description": "Number of players on the court per team."
+        },
+        "numberOfPeriods": {
+          "type": "number",
+          "description": "Number of periods in the match (e.g., quarters)."
+        },
+        "periodDuration": {
+          "type": "number",
+          "description": "Duration of each period in minutes."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "name",
+        "teamSize",
+        "numberOfPeriods",
+        "periodDuration"
+      ]
+    },
+    "Position": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Position",
+      "type": "object",
+      "description": "Defines a player position within a specific GameFormat.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the position."
+        },
+        "gameFormatId": {
+          "type": "string",
+          "description": "The ID of the GameFormat this position belongs to."
+        },
+        "name": {
+          "type": "string",
+          "description": "The full name of the position (e.g., 'Goal Keeper')."
+        },
+        "abbreviation": {
+          "type": "string",
+          "description": "The short abbreviation for the position (e.g., 'GK')."
+        },
+        "icon": {
+          "type": "string",
+          "description": "The name of the lucide-react icon to represent this position."
+        }
+      },
+      "required": [
+        "id",
+        "gameFormatId",
+        "name",
+        "abbreviation",
+        "icon"
       ]
     }
   },
@@ -513,8 +582,52 @@
             }
           ]
         }
+      },
+      {
+        "path": "/users/{userId}/gameFormats/{gameFormatId}",
+        "definition": {
+          "entityName": "GameFormat",
+          "schema": {
+            "$ref": "#/backend/entities/GameFormat"
+          },
+          "description": "Stores user-defined game formats, including timing and team size.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "gameFormatId",
+              "description": "The unique identifier for the game format."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/gameFormats/{gameFormatId}/positions/{positionId}",
+        "definition": {
+          "entityName": "Position",
+          "schema": {
+            "$ref": "#/backend/entities/Position"
+          },
+          "description": "Stores the positions associated with a specific game format.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "gameFormatId",
+              "description": "The unique identifier for the game format."
+            },
+            {
+              "name": "positionId",
+              "description": "The unique identifier for the position."
+            }
+          ]
+        }
       }
     ],
-    "reasoning": "The Firestore structure is designed to ensure data ownership, security, and scalability for the Netball Court Time Tracker application. It leverages path-based ownership for user-specific data and denormalization where necessary to avoid complex security rules and maintain authorization independence.\n\n*   **Users Collection:**  Stores user profiles. The `id` field acts as the document ID. Security rules will ensure only the user can access their profile.\n*   **Rosters Collection:** Stores team rosters created by users. The collection is nested under `/users/{userId}` to establish clear ownership. No denormalization is required because the path enforces ownership.\n*   **Players Collection:** Stores player data.  Nested under `/users/{userId}/rosters/{rosterId}`, this enforces ownership and allows easy retrieval of players for a specific roster.  No denormalization is needed due to the path.\n*   **Matches Collection:** Stores match data. Nested under `/users/{userId}/matches/{matchId}` for clear ownership. \n*   **MatchPlans Collection:** Stores pre-defined match plans. These are nested under `/users/{userId}/matches/{matchId}/matchPlans/{matchPlanId}`.  This structure ensures only the owner of a match can access its match plans.\n*   **PlayerPositions Collection:** Stores player positions for each quarter of a match in a match plan.  Nested under `/users/{userId}/matches/{matchId}/matchPlans/{matchPlanId}/playerPositions/{playerPositionId}`, the structure reflects the match plan hierarchy.\n*   **Tournaments Collection:** Stores tournaments, each containing multiple matches.  Nested under `/users/{userId}/tournaments/{tournamentId}`.\n*   **Goals Collection:** Stores goals scored during a match.  Nested under `/users/{userId}/matches/{matchId}/goals/{goalId}`.\n*   **Settings Collection:** Stores user-specific settings.  Located at `/users/{userId}/settings/{settingsId}`.\n\n**Authorization Independence and QAPs:**\n\nThe structure achieves Authorization Independence through path-based ownership, eliminating the need for `get()` calls in security rules.  Since rosters, players, matches, match plans, player positions, tournaments, goals, and settings are all nested under the user's document, security rules can simply check `request.auth.uid == userId` to ensure the user has access.  This eliminates hierarchical dependencies.\n\nQAPs (Rules are not Filters) are supported because the security rules can efficiently filter list operations based on the path. For example, listing rosters under `/users/{userId}` only returns rosters owned by that user, as enforced by the security rules. This prevents over-fetching data and ensures that users can only access the data they are authorized to see."
+    "reasoning": "The Firestore structure is designed to ensure data ownership, security, and scalability for the Netball Court Time Tracker application. It leverages path-based ownership for user-specific data and denormalization where necessary to avoid complex security rules and maintain authorization independence.\n\n*   **Users Collection:**  Stores user profiles. The `id` field acts as the document ID. Security rules will ensure only the user can access their profile.\n*   **Rosters Collection:** Stores team rosters created by users. The collection is nested under `/users/{userId}` to establish clear ownership. No denormalization is required because the path enforces ownership.\n*   **Players Collection:** Stores player data.  Nested under `/users/{userId}/rosters/{rosterId}`, this enforces ownership and allows easy retrieval of players for a specific roster.  No denormalization is needed due to the path.\n*   **Matches Collection:** Stores match data. Nested under `/users/{userId}/matches/{matchId}` for clear ownership. \n*   **MatchPlans Collection:** Stores pre-defined match plans. These are nested under `/users/{userId}/matches/{matchId}/matchPlans/{matchPlanId}`.  This structure ensures only the owner of a match can access its match plans.\n*   **PlayerPositions Collection:** Stores player positions for each quarter of a match in a match plan.  Nested under `/users/{userId}/matches/{matchId}/matchPlans/{matchPlanId}/playerPositions/{playerPositionId}`, the structure reflects the match plan hierarchy.\n*   **Tournaments Collection:** Stores tournaments, each containing multiple matches.  Nested under `/users/{userId}/tournaments/{tournamentId}`.\n*   **Goals Collection:** Stores goals scored during a match.  Nested under `/users/{userId}/matches/{matchId}/goals/{goalId}`.\n*   **Settings Collection:** Stores user-specific settings.  Located at `/users/{userId}/settings/{settingsId}`.\n*   **GameFormats Collection**: Stores user-defined game formats. Nested under `/users/{userId}` for ownership.\n*   **Positions Collection**: Stores the positions for a specific game format. Nested under `/users/{userId}/gameFormats/{gameFormatId}` for clear ownership and easy retrieval.\n\n**Authorization Independence and QAPs:**\n\nThe structure achieves Authorization Independence through path-based ownership, eliminating the need for `get()` calls in security rules.  Since rosters, players, matches, match plans, player positions, tournaments, goals, and settings are all nested under the user's document, security rules can simply check `request.auth.uid == userId` to ensure the user has access.  This eliminates hierarchical dependencies.\n\nQAPs (Rules are not Filters) are supported because the security rules can efficiently filter list operations based on the path. For example, listing rosters under `/users/{userId}` only returns rosters owned by that user, as enforced by the security rules. This prevents over-fetching data and ensures that users can only access the data they are authorized to see."
   }
 }

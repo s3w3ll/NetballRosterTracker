@@ -1,0 +1,520 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the Netball Court Time Tracker application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the user.",
+          "format": "email"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "The display name of the user."
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "displayName"
+      ]
+    },
+    "Roster": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Roster",
+      "type": "object",
+      "description": "Represents a team roster, containing a list of players.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the roster."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Roster)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the roster."
+        },
+        "description": {
+          "type": "string",
+          "description": "A more detailed description of the Roster"
+        },
+        "playerIds": {
+          "type": "array",
+          "description": "References to Players. (Relationship: Roster 1:N Player)",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "name",
+        "playerIds"
+      ]
+    },
+    "Player": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Player",
+      "type": "object",
+      "description": "Represents a player in a team roster.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the player."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the player."
+        },
+        "position": {
+          "type": "string",
+          "description": "Preferred playing position of the player."
+        },
+        "rosterId": {
+          "type": "string",
+          "description": "Reference to Roster. (Relationship: Roster 1:N Player)"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "position",
+        "rosterId"
+      ]
+    },
+    "Match": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Match",
+      "type": "object",
+      "description": "Represents a netball match between two teams.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the match."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Match)"
+        },
+        "team1RosterId": {
+          "type": "string",
+          "description": "Reference to Roster for team 1. (Relationship: Roster 1:N Match)"
+        },
+        "team2RosterId": {
+          "type": "string",
+          "description": "Reference to Roster for team 2. (Relationship: Roster 1:N Match)"
+        },
+        "startTime": {
+          "type": "string",
+          "description": "Date and time when the match started.",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": "string",
+          "description": "Date and time when the match ended.",
+          "format": "date-time"
+        },
+        "numberOfPeriods": {
+          "type": "number",
+          "description": "Number of periods in the match (e.g., quarters)."
+        },
+        "periodDuration": {
+          "type": "number",
+          "description": "Duration of each period in minutes."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "team1RosterId",
+        "team2RosterId",
+        "startTime",
+        "numberOfPeriods",
+        "periodDuration"
+      ]
+    },
+    "MatchPlan": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "MatchPlan",
+      "type": "object",
+      "description": "Represents a pre-defined match plan with player positions for each quarter.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the match plan."
+        },
+        "matchId": {
+          "type": "string",
+          "description": "Reference to Match. (Relationship: Match 1:N MatchPlan)"
+        },
+        "quarter": {
+          "type": "number",
+          "description": "The quarter number for this match plan."
+        },
+        "playerPositions": {
+          "type": "array",
+          "description": "Array of player IDs and their positions for this quarter. (Relationship: MatchPlan 1:N PlayerPosition)",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "matchId",
+        "quarter",
+        "playerPositions"
+      ]
+    },
+    "Tournament": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Tournament",
+      "type": "object",
+      "description": "Represents a tournament consisting of multiple matches.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the tournament."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Tournament)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the tournament."
+        },
+        "matchIds": {
+          "type": "array",
+          "description": "References to Matches within the tournament. (Relationship: Tournament 1:N Match)",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "name",
+        "matchIds"
+      ]
+    },
+    "PlayerPosition": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PlayerPosition",
+      "type": "object",
+      "description": "Represents a player's position during a specific period (quarter) of a match.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the player position entry."
+        },
+        "matchPlanId": {
+          "type": "string",
+          "description": "Reference to MatchPlan. (Relationship: MatchPlan 1:N PlayerPosition)"
+        },
+        "playerId": {
+          "type": "string",
+          "description": "Reference to Player. (Relationship: Player 1:N PlayerPosition)"
+        },
+        "position": {
+          "type": "string",
+          "description": "The position the player is playing during the specified period."
+        },
+        "timeOnCourt": {
+          "type": "number",
+          "description": "The game time for the player on the court for the position"
+        }
+      },
+      "required": [
+        "id",
+        "matchPlanId",
+        "playerId",
+        "position"
+      ]
+    },
+    "Goal": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Goal",
+      "type": "object",
+      "description": "Represents a goal scored by a player during a match.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the goal."
+        },
+        "matchId": {
+          "type": "string",
+          "description": "Reference to Match. (Relationship: Match 1:N Goal)"
+        },
+        "playerId": {
+          "type": "string",
+          "description": "Reference to Player. (Relationship: Player 1:N Goal)"
+        },
+        "timeScored": {
+          "type": "string",
+          "description": "Date and time when the goal was scored.",
+          "format": "date-time"
+        },
+        "team": {
+          "type": "number",
+          "description": "the team who scored the goal"
+        }
+      },
+      "required": [
+        "id",
+        "matchId",
+        "playerId",
+        "timeScored"
+      ]
+    },
+    "Settings": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Settings",
+      "type": "object",
+      "description": "Represents application settings that the user can modify.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the settings."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Settings)"
+        },
+        "settingKey": {
+          "type": "string",
+          "description": "Name of the setting."
+        },
+        "settingValue": {
+          "type": "string",
+          "description": "Value of the setting."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "settingKey",
+        "settingValue"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profiles.  The 'userId' parameter identifies the user. No denormalization required as this is user data.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/rosters/{rosterId}",
+        "definition": {
+          "entityName": "Roster",
+          "schema": {
+            "$ref": "#/backend/entities/Roster"
+          },
+          "description": "Stores team rosters created by users. The 'userId' parameter identifies the user. No denormalization required as the path enforces ownership.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "rosterId",
+              "description": "The unique identifier for the roster."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/rosters/{rosterId}/players/{playerId}",
+        "definition": {
+          "entityName": "Player",
+          "schema": {
+            "$ref": "#/backend/entities/Player"
+          },
+          "description": "Stores player data for a specific roster. The 'userId' and 'rosterId' parameters ensure proper data scoping.  No denormalization needed due to the path.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "rosterId",
+              "description": "The unique identifier for the roster."
+            },
+            {
+              "name": "playerId",
+              "description": "The unique identifier for the player."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/matches/{matchId}",
+        "definition": {
+          "entityName": "Match",
+          "schema": {
+            "$ref": "#/backend/entities/Match"
+          },
+          "description": "Stores match data for a user.  The 'userId' and 'matchId' parameters ensure proper data scoping and ownership. No denormalization needed due to the path.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "matchId",
+              "description": "The unique identifier for the match."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/matches/{matchId}/matchPlans/{matchPlanId}",
+        "definition": {
+          "entityName": "MatchPlan",
+          "schema": {
+            "$ref": "#/backend/entities/MatchPlan"
+          },
+          "description": "Stores match plans for a specific match. The 'userId', 'matchId', and 'matchPlanId' parameters ensure proper data scoping and ownership. No denormalization is required.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "matchId",
+              "description": "The unique identifier for the match."
+            },
+            {
+              "name": "matchPlanId",
+              "description": "The unique identifier for the match plan."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/matches/{matchId}/matchPlans/{matchPlanId}/playerPositions/{playerPositionId}",
+        "definition": {
+          "entityName": "PlayerPosition",
+          "schema": {
+            "$ref": "#/backend/entities/PlayerPosition"
+          },
+          "description": "Stores player positions for a specific match plan. The 'userId', 'matchId', 'matchPlanId', and 'playerPositionId' parameters ensure proper data scoping and ownership. No denormalization required.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "matchId",
+              "description": "The unique identifier for the match."
+            },
+            {
+              "name": "matchPlanId",
+              "description": "The unique identifier for the match plan."
+            },
+            {
+              "name": "playerPositionId",
+              "description": "The unique identifier for the player position."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/tournaments/{tournamentId}",
+        "definition": {
+          "entityName": "Tournament",
+          "schema": {
+            "$ref": "#/backend/entities/Tournament"
+          },
+          "description": "Stores tournament data for a user.  The 'userId' and 'tournamentId' parameters ensure proper data scoping and ownership. No denormalization is required.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "tournamentId",
+              "description": "The unique identifier for the tournament."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/matches/{matchId}/goals/{goalId}",
+        "definition": {
+          "entityName": "Goal",
+          "schema": {
+            "$ref": "#/backend/entities/Goal"
+          },
+          "description": "Stores goals scored during a match. The 'userId' and 'matchId' parameters ensure proper data scoping and ownership. No denormalization required.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "matchId",
+              "description": "The unique identifier for the match."
+            },
+            {
+              "name": "goalId",
+              "description": "The unique identifier for the goal."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/settings/{settingsId}",
+        "definition": {
+          "entityName": "Settings",
+          "schema": {
+            "$ref": "#/backend/entities/Settings"
+          },
+          "description": "Stores user settings. The 'userId' parameter identifies the user. No denormalization required as this is user-specific data.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "settingsId",
+              "description": "The unique identifier for the setting."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to ensure data ownership, security, and scalability for the Netball Court Time Tracker application. It leverages path-based ownership for user-specific data and denormalization where necessary to avoid complex security rules and maintain authorization independence.\n\n*   **Users Collection:**  Stores user profiles. The `id` field acts as the document ID. Security rules will ensure only the user can access their profile.\n*   **Rosters Collection:** Stores team rosters created by users. The collection is nested under `/users/{userId}` to establish clear ownership. No denormalization is required because the path enforces ownership.\n*   **Players Collection:** Stores player data.  Nested under `/users/{userId}/rosters/{rosterId}`, this enforces ownership and allows easy retrieval of players for a specific roster.  No denormalization is needed due to the path.\n*   **Matches Collection:** Stores match data. Nested under `/users/{userId}/matches/{matchId}` for clear ownership. \n*   **MatchPlans Collection:** Stores pre-defined match plans. These are nested under `/users/{userId}/matches/{matchId}/matchPlans/{matchPlanId}`.  This structure ensures only the owner of a match can access its match plans.\n*   **PlayerPositions Collection:** Stores player positions for each quarter of a match in a match plan.  Nested under `/users/{userId}/matches/{matchId}/matchPlans/{matchPlanId}/playerPositions/{playerPositionId}`, the structure reflects the match plan hierarchy.\n*   **Tournaments Collection:** Stores tournaments, each containing multiple matches.  Nested under `/users/{userId}/tournaments/{tournamentId}`.\n*   **Goals Collection:** Stores goals scored during a match.  Nested under `/users/{userId}/matches/{matchId}/goals/{goalId}`.\n*   **Settings Collection:** Stores user-specific settings.  Located at `/users/{userId}/settings/{settingsId}`.\n\n**Authorization Independence and QAPs:**\n\nThe structure achieves Authorization Independence through path-based ownership, eliminating the need for `get()` calls in security rules.  Since rosters, players, matches, match plans, player positions, tournaments, goals, and settings are all nested under the user's document, security rules can simply check `request.auth.uid == userId` to ensure the user has access.  This eliminates hierarchical dependencies.\n\nQAPs (Rules are not Filters) are supported because the security rules can efficiently filter list operations based on the path. For example, listing rosters under `/users/{userId}` only returns rosters owned by that user, as enforced by the security rules. This prevents over-fetching data and ensures that users can only access the data they are authorized to see."
+  }
+}

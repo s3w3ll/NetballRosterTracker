@@ -1,0 +1,240 @@
+/**
+ * This ruleset enforces a strict user-ownership security model for the Netball
+ * Court Time Tracker application. It is designed for rapid prototyping, meaning
+ * it strictly controls *who* can access data but remains flexible on the *shape*
+ * of that data.
+ *
+ * Core Philosophy:
+ * A user has complete control over their own data, and no access to anyone else's.
+ * All data is private to the user who created it. There is no public or shared data.
+ *
+ * Data Structure:
+ * All application data (rosters, matches, players, etc.) is hierarchically
+ * nested under the `/users/{userId}` collection. This path-based ownership is
+ * the primary mechanism for enforcing security, making the rules simple, fast,
+ * and cost-effective by avoiding extra database reads (`get()` calls).
+ *
+ * Key Security Decisions:
+ * - User Enumeration is Disallowed: Listing the top-level `/users` collection is
+ *   explicitly forbidden to protect user privacy.
+ * - Path-Based Authorization: All security rules rely on the `{userId}` wildcard
+ *   in the document path to verify ownership against the authenticated user's UID.
+ * - Relational Integrity: On creation, documents must contain a reference ID
+ *   (e.g., `userId`, `rosterId`) that matches the corresponding ID in their path.
+ *   These reference fields are immutable once set to prevent data from being
+ *   re-parented or having its ownership changed.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --------------------------------------------------------------------
+    // Helper Functions
+    // --------------------------------------------------------------------
+
+    /**
+     * Checks if a user is authenticated.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks if the currently authenticated user's UID matches the provided userId.
+     * This is the cornerstone of the user-ownership model.
+     * @param userId The UID to check against the authenticated user.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * Verifies ownership for an existing document. Used for update and delete.
+     * Combines an ownership check with an existence check for robustness.
+     * @param userId The UID of the resource owner.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * Validates that a user is creating a resource under their own path and that
+     * the document's internal `userId` field correctly references them.
+     * @param userId The userId from the document path.
+     */
+    function isCreatingOwnResource(userId) {
+      return isOwner(userId) && request.resource.data.userId == userId;
+    }
+    
+    /**
+     * Validates that a user is creating a sub-collection resource and that
+     * the document's internal parent ID field matches the ID in the path.
+     * @param parentIdKey The key of the parent ID field (e.g., "rosterId").
+     * @param parentIdValue The value of the parent ID from the path.
+     */
+    function isCreatingChildResource(parentIdKey, parentIdValue) {
+      return request.resource.data[parentIdKey] == parentIdValue;
+    }
+
+    /**
+     * Ensures that a critical, immutable field (like a `userId` or a parent ID)
+     * is not changed during an update operation.
+     * @param field The key of the field to check for immutability.
+     */
+    function isFieldImmutable(field) {
+      return request.resource.data[field] == resource.data[field];
+    }
+
+
+    // --------------------------------------------------------------------
+    // User Profiles
+    // --------------------------------------------------------------------
+
+    /**
+     * @description Manages user profile documents. A user can create their own
+     *   profile, and read or update it, but cannot see other user profiles.
+     * @path /users/{userId}
+     * @allow (create) An authenticated user creating their own user document: `request.auth.uid == userId`.
+     * @allow (get, update, delete) The user `{userId}` accessing their own document.
+     * @deny (list) Any user trying to list all user documents.
+     * @deny (get, update) User 'abc' trying to access user 'xyz's document.
+     * @principle Restricts access to a user's own data tree and prevents user enumeration.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && isFieldImmutable('id');
+      allow delete: if isExistingOwner(userId);
+
+      // --------------------------------------------------------------------
+      // Rosters & Players
+      // --------------------------------------------------------------------
+
+      /**
+       * @description Manages team rosters owned by a specific user.
+       * @path /users/{userId}/rosters/{rosterId}
+       * @allow (create, get, list, update, delete) User `{userId}` managing their own rosters.
+       * @deny (any) User 'abc' trying to access rosters belonging to user 'xyz'.
+       * @principle Enforces document ownership for all operations.
+       */
+      match /rosters/{rosterId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isCreatingOwnResource(userId);
+        allow update: if isExistingOwner(userId) && isFieldImmutable('userId');
+        allow delete: if isExistingOwner(userId);
+
+        /**
+         * @description Manages players within a specific roster. Access is inherited
+         *   from the parent roster's owner.
+         * @path /users/{userId}/rosters/{rosterId}/players/{playerId}
+         * @allow (any) User `{userId}` managing players within their own roster.
+         * @deny (any) Any user other than `{userId}` accessing these players.
+         * @principle Inherits ownership from the parent document path. Validates relational integrity.
+         */
+        match /players/{playerId} {
+          allow get, list: if isOwner(userId);
+          allow create: if isOwner(userId) && isCreatingChildResource('rosterId', rosterId);
+          allow update: if isExistingOwner(userId) && isFieldImmutable('rosterId');
+          allow delete: if isExistingOwner(userId);
+        }
+      }
+
+      // --------------------------------------------------------------------
+      // Matches & Match Data
+      // --------------------------------------------------------------------
+
+      /**
+       * @description Manages matches created by a specific user.
+       * @path /users/{userId}/matches/{matchId}
+       * @allow (any) User `{userId}` managing their own matches.
+       * @deny (any) User 'abc' trying to access matches belonging to user 'xyz'.
+       * @principle Enforces document ownership for all operations.
+       */
+      match /matches/{matchId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isCreatingOwnResource(userId);
+        allow update: if isExistingOwner(userId) && isFieldImmutable('userId');
+        allow delete: if isExistingOwner(userId);
+
+        /**
+         * @description Manages match plans for a specific match.
+         * @path /users/{userId}/matches/{matchId}/matchPlans/{matchPlanId}
+         * @allow (any) User `{userId}` managing match plans for their own match.
+         * @deny (any) Any user other than `{userId}` accessing these match plans.
+         * @principle Inherits ownership from the parent document path. Validates relational integrity.
+         */
+        match /matchPlans/{matchPlanId} {
+          allow get, list: if isOwner(userId);
+          allow create: if isOwner(userId) && isCreatingChildResource('matchId', matchId);
+          allow update: if isExistingOwner(userId) && isFieldImmutable('matchId');
+          allow delete: if isExistingOwner(userId);
+
+          /**
+           * @description Manages player positions within a specific match plan.
+           * @path /users/{userId}/matches/{matchId}/matchPlans/{matchPlanId}/playerPositions/{playerPositionId}
+           * @allow (any) User `{userId}` managing player positions within their own match plan.
+           * @deny (any) Any user other than `{userId}` accessing these positions.
+           * @principle Deeply nested ownership inherited from the root user path.
+           */
+          match /playerPositions/{playerPositionId} {
+            allow get, list: if isOwner(userId);
+            allow create: if isOwner(userId) && isCreatingChildResource('matchPlanId', matchPlanId);
+            allow update: if isExistingOwner(userId) && isFieldImmutable('matchPlanId');
+            allow delete: if isExistingOwner(userId);
+          }
+        }
+
+        /**
+         * @description Manages goals recorded for a specific match.
+         * @path /users/{userId}/matches/{matchId}/goals/{goalId}
+         * @allow (any) User `{userId}` managing goals for their own match.
+         * @deny (any) Any user other than `{userId}` accessing these goals.
+         * @principle Inherits ownership from the parent document path. Validates relational integrity.
+         */
+        match /goals/{goalId} {
+          allow get, list: if isOwner(userId);
+          allow create: if isOwner(userId) && isCreatingChildResource('matchId', matchId);
+          allow update: if isExistingOwner(userId) && isFieldImmutable('matchId');
+          allow delete: if isExistingOwner(userId);
+        }
+      }
+
+      // --------------------------------------------------------------------
+      // Tournaments
+      // --------------------------------------------------------------------
+
+      /**
+       * @description Manages tournaments created by a specific user.
+       * @path /users/{userId}/tournaments/{tournamentId}
+       * @allow (any) User `{userId}` managing their own tournaments.
+       * @deny (any) User 'abc' trying to access tournaments belonging to user 'xyz'.
+       * @principle Enforces document ownership for all operations.
+       */
+      match /tournaments/{tournamentId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isCreatingOwnResource(userId);
+        allow update: if isExistingOwner(userId) && isFieldImmutable('userId');
+        allow delete: if isExistingOwner(userId);
+      }
+      
+      // --------------------------------------------------------------------
+      // Settings
+      // --------------------------------------------------------------------
+
+      /**
+       * @description Manages settings for a specific user.
+       * @path /users/{userId}/settings/{settingsId}
+       * @allow (any) User `{userId}` managing their own settings.
+       * @deny (any) User 'abc' trying to access settings belonging to user 'xyz'.
+       * @principle Enforces document ownership for all operations.
+       */
+      match /settings/{settingsId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isCreatingOwnResource(userId);
+        allow update: if isExistingOwner(userId) && isFieldImmutable('userId');
+        allow delete: if isExistingOwner(userId);
+      }
+    }
+  }
+}

@@ -84,8 +84,7 @@ service cloud.firestore {
     function isFieldImmutable(field) {
       return request.resource.data[field] == resource.data[field];
     }
-
-
+    
     // --------------------------------------------------------------------
     // User Profiles
     // --------------------------------------------------------------------

@@ -3,6 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { Header } from '@/components/shared/Header';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
+import { AuthGuard } from '@/components/auth/AuthGuard';
 
 export const metadata: Metadata = {
   title: 'CourtTime - Netball Tracker',
@@ -25,7 +26,9 @@ export default function RootLayout({
         <FirebaseClientProvider>
             <div className="relative flex min-h-dvh flex-col">
               <Header />
-              <main className="flex-1">{children}</main>
+              <main className="flex-1">
+                <AuthGuard>{children}</AuthGuard>
+              </main>
             </div>
             <Toaster />
         </FirebaseClientProvider>

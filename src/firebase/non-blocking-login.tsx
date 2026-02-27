@@ -1,29 +1,43 @@
 'use client';
 import {
-  Auth, // Import Auth type for type hinting
+  Auth,
   signInAnonymously,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  // Assume getAuth and app are initialized elsewhere
+  signInWithPopup,
+  GoogleAuthProvider,
+  OAuthProvider,
+  signOut as firebaseSignOut,
 } from 'firebase/auth';
 
 /** Initiate anonymous sign-in (non-blocking). */
 export function initiateAnonymousSignIn(authInstance: Auth): void {
-  // CRITICAL: Call signInAnonymously directly. Do NOT use 'await signInAnonymously(...)'.
   signInAnonymously(authInstance);
-  // Code continues immediately. Auth state change is handled by onAuthStateChanged listener.
 }
 
 /** Initiate email/password sign-up (non-blocking). */
 export function initiateEmailSignUp(authInstance: Auth, email: string, password: string): void {
-  // CRITICAL: Call createUserWithEmailAndPassword directly. Do NOT use 'await createUserWithEmailAndPassword(...)'.
   createUserWithEmailAndPassword(authInstance, email, password);
-  // Code continues immediately. Auth state change is handled by onAuthStateChanged listener.
 }
 
 /** Initiate email/password sign-in (non-blocking). */
 export function initiateEmailSignIn(authInstance: Auth, email: string, password: string): void {
-  // CRITICAL: Call signInWithEmailAndPassword directly. Do NOT use 'await signInWithEmailAndPassword(...)'.
   signInWithEmailAndPassword(authInstance, email, password);
-  // Code continues immediately. Auth state change is handled by onAuthStateChanged listener.
+}
+
+/** Sign in with Google via popup. Returns a promise so the UI can handle loading/error states. */
+export async function signInWithGoogle(authInstance: Auth): Promise<void> {
+  const provider = new GoogleAuthProvider();
+  await signInWithPopup(authInstance, provider);
+}
+
+/** Sign in with Microsoft via popup. Returns a promise so the UI can handle loading/error states. */
+export async function signInWithMicrosoft(authInstance: Auth): Promise<void> {
+  const provider = new OAuthProvider('microsoft.com');
+  await signInWithPopup(authInstance, provider);
+}
+
+/** Sign out the current user. */
+export async function signOutUser(authInstance: Auth): Promise<void> {
+  await firebaseSignOut(authInstance);
 }

@@ -22,6 +22,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 const gameSetupSchema = z.object({
   gameFormatId: z.string({ required_error: "Please select a game format."}),
+  numberOfPeriods: z.coerce.number().min(1, "There must be at least one period."),
+  periodDuration: z.coerce.number().min(1, "Duration must be at least one minute."),
 });
 
 type GameSetupFormData = z.infer<typeof gameSetupSchema>;
@@ -67,7 +69,7 @@ const createDefaultFormats = async (firestore: any, userId: string) => {
     for (const format of formats) {
         const formatRef = doc(firestore, `users/${userId}/gameFormats`, format.id);
         const { positions, ...formatData } = format;
-        batch.set(formatRef, { ...formatData, userId: userId, id: format.id });
+        batch.set(formatRef, { ...formatData, userId, id: format.id });
         
         for (const position of positions) {
             const positionRef = doc(firestore, `users/${userId}/gameFormats/${format.id}/positions`, position.id);
@@ -114,13 +116,44 @@ export default function GameSetupPage() {
   });
 
   const selectedFormatId = form.watch('gameFormatId');
-  const selectedFormat = gameFormats?.find(f => f.id === selectedFormatId);
+
+  useEffect(() => {
+    const selectedFormat = gameFormats?.find(f => f.id === selectedFormatId);
+    if (selectedFormat) {
+      form.setValue('numberOfPeriods', selectedFormat.numberOfPeriods);
+      form.setValue('periodDuration', selectedFormat.periodDuration);
+    }
+  }, [selectedFormatId, gameFormats, form]);
+
 
   const onSubmit = async (data: GameSetupFormData) => {
-    if (!user || !roster || !selectedFormat) {
-        toast({ variant: "destructive", title: "Error", description: "Cannot create a match without a user, roster, and game format." });
+    if (!user || !roster) {
+        toast({ variant: "destructive", title: "Error", description: "Cannot create a match without a user and roster." });
         return;
     };
+
+    // We need to create a temporary, one-off game format for this match
+    // to store the potentially modified settings.
+    const tempGameFormatId = uuidv4();
+    const originalFormat = gameFormats?.find(f => f.id === data.gameFormatId);
+    if (!originalFormat) {
+       toast({ variant: "destructive", title: "Error", description: "Selected game format not found." });
+       return;
+    }
+
+    const tempGameFormat = {
+      ...originalFormat,
+      id: tempGameFormatId,
+      name: `${originalFormat.name} (Custom)`,
+      numberOfPeriods: data.numberOfPeriods,
+      periodDuration: data.periodDuration,
+      isTemporary: true, // Flag to identify this as a one-off format
+    };
+    
+    const batch = writeBatch(firestore);
+    const tempFormatRef = doc(firestore, `users/${user.uid}/gameFormats`, tempGameFormatId);
+    batch.set(tempFormatRef, tempGameFormat);
+
 
     const matchId = uuidv4();
     const newMatch = {
@@ -130,23 +163,24 @@ export default function GameSetupPage() {
         team2RosterId: null,
         startTime: new Date().toISOString(),
         endTime: null,
-        gameFormatId: selectedFormat.id,
+        gameFormatId: tempGameFormatId, // Use the new temporary format ID
     };
 
     const matchDocRef = doc(firestore, `users/${user.uid}/matches`, matchId);
+    batch.set(matchDocRef, newMatch);
     
     try {
-      await setDoc(matchDocRef, newMatch);
+      await batch.commit();
       toast({
           title: "Match Created!",
           description: "Your new match has been set up.",
       });
       router.push(`/games/${matchId}`);
-    } catch (error) {
+    } catch (error: any) {
        toast({
           variant: "destructive",
           title: "Uh oh! Something went wrong.",
-          description: "Could not save the match to the database.",
+          description: error.message || "Could not save the match to the database.",
       });
     }
   };
@@ -206,7 +240,7 @@ export default function GameSetupPage() {
             <CardHeader>
               <CardTitle>Match Details</CardTitle>
               <CardDescription>
-                Select a game format to automatically set up the periods and duration.
+                Select a game format, then customize the timing if needed for this specific match.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-8">
@@ -223,7 +257,7 @@ export default function GameSetupPage() {
                             </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                            {gameFormats?.map(format => (
+                            {gameFormats?.filter(f => !f.isTemporary).map(format => (
                                 <SelectItem key={format.id} value={format.id}>{format.name}</SelectItem>
                             ))}
                         </SelectContent>
@@ -232,19 +266,46 @@ export default function GameSetupPage() {
                   </FormItem>
                 )}
               />
-            {selectedFormat && (
-               <Alert>
-                <Info className="h-4 w-4" />
-                <AlertTitle>Format Details: {selectedFormat.name}</AlertTitle>
-                <AlertDescription>
-                    This format uses {selectedFormat.numberOfPeriods} periods of {selectedFormat.periodDuration} minutes each, for a total of {selectedFormat.numberOfPeriods * selectedFormat.periodDuration} minutes of game time. It is designed for {selectedFormat.teamSize} players on court.
-                </AlertDescription>
-            </Alert>
+            {selectedFormatId && (
+               <Card className="bg-muted/50">
+                 <CardHeader>
+                    <CardTitle className="text-lg">Customize Format</CardTitle>
+                 </CardHeader>
+                 <CardContent className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="numberOfPeriods"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Periods</FormLabel>
+                          <FormControl>
+                            <Input type="number" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                     <FormField
+                      control={form.control}
+                      name="periodDuration"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Period Duration</FormLabel>
+                          <FormControl>
+                            <Input type="number" {...field} />
+                          </FormControl>
+                          <FormDescription className="text-xs">in minutes</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                 </CardContent>
+               </Card>
             )}
 
             </CardContent>
             <CardFooter>
-              <Button type="submit" disabled={form.formState.isSubmitting || !selectedFormat}>
+              <Button type="submit" disabled={form.formState.isSubmitting || !selectedFormatId}>
                 {form.formState.isSubmitting ? 'Starting...' : 'Start Match'}
               </Button>
             </CardFooter>

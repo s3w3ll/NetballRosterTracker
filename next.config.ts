@@ -1,7 +1,11 @@
 import type {NextConfig} from 'next';
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Static export only for production builds (GitHub Pages deployment).
+  // Dev mode uses standard Next.js server for full dynamic routing support.
+  ...(isProduction ? { output: 'export' as const, trailingSlash: true } : {}),
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -9,6 +13,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',

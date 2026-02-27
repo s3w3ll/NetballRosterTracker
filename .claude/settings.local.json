@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npx next build)",
+      "Bash(cat /c/Repos/NetballRosterTracker/patches/*.patch)",
+      "Bash(./node_modules/.bin/next build)",
+      "Bash(powershell -Command \"Remove-Item -Recurse -Force ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next'' -ErrorAction SilentlyContinue; Write-Host ''Cache cleared''\")",
+      "Bash(powershell -Command \"Remove-Item -Recurse -Force ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next'' -ErrorAction SilentlyContinue\")",
+      "Bash(ls /c/Repos/NetballRosterTracker/.next/server/app/tournaments/\\\\[tournamentId\\\\]/)",
+      "Bash(cat /c/Repos/NetballRosterTracker/.next/server/app/tournaments/\\\\[tournamentId\\\\]/page.js)",
+      "Bash(powershell -Command \"Get-Content ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\tournaments\\\\[tournamentId]\\\\page.js''\")",
+      "Bash(powershell -Command \"Get-ChildItem ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\tournaments'' -Recurse | Select-Object FullName\")",
+      "Bash(powershell -Command \"Get-Content ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\tournaments\\\\[tournamentId]\\\\page.js'' -Raw\")",
+      "Bash(powershell -Command \"Get-Content ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\tournaments\\\\[tournamentId]\\\\page.js'' | Select-Object -First 60\")",
+      "Bash(powershell -Command \"Get-Content -LiteralPath ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\tournaments\\\\[tournamentId]\\\\page.js'' | Select-Object -First 60\")",
+      "Bash(powershell -Command \"Get-Content -LiteralPath ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\games\\\\[gameId]\\\\page.js''\")",
+      "Bash(Select-String \"generateStaticParams|82525|loader\")",
+      "Bash(powershell -Command \"Get-ChildItem ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\games'' -Recurse | Select-Object FullName\")",
+      "Bash(powershell -Command \"Get-Content -LiteralPath ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\games\\\\[gameId]\\\\page.js'' | ForEach-Object { if \\($_ -match ''generateStaticParams|GenerateStaticParams|generatestatic''\\) { $_ } }\")",
+      "Bash(powershell -Command \"Get-Content -LiteralPath ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\games\\\\[gameId]\\\\page.js'' -Raw | Select-String -Pattern ''generateStaticParams'' -AllMatches | ForEach-Object { $_Matches } | Select-Object Value, Index\")",
+      "Bash(powershell -Command \"Get-Content -LiteralPath ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\games\\\\[gameId]\\\\page.js'' -Raw | Select-String ''generateStaticParams''\")"
+    ]
+  }
+}

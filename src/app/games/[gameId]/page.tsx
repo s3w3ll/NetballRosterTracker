@@ -1,18 +1,22 @@
+
 'use client';
 
 import { useParams, useSearchParams } from 'next/navigation';
 import { useDoc, useCollection, useFirestore, useUser, useMemoFirebase } from '@/firebase';
-import { doc, collection } from 'firebase/firestore';
+import { doc, collection, updateDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Timer, Users, User, Shield, Target, Circle, Feather, Footprints, Play, Pause, RefreshCw, ArrowRight, ClipboardEdit, Gamepad2 } from 'lucide-react';
+import { Timer, Users, User, Shield, Target, Circle, Feather, Footprints, Play, Pause, RefreshCw, ArrowRight, ClipboardEdit, Gamepad2, Info } from 'lucide-react';
 import { useState, useEffect, useMemo, DragEvent, useRef, useCallback } from 'react';
 import { type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { useToast } from '@/hooks/use-toast';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 
 const iconMap: Record<string, LucideIcon> = {
@@ -201,7 +205,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                   (timeInPos || 0) > 0 ? (
                       <div key={posAbbr} className="flex items-center gap-1">
                           <span className="font-semibold">{posAbbr}:</span>
-                          <span className="font-mono">{formatTime(timeInPos)}</span>
+                          <span className="font-mono">{formatTime(timeInPos as number)}</span>
                       </div>
                   ) : null
               ))}
@@ -287,19 +291,229 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   )
 }
 
+// Data structure for the plan: { [period: number]: { [positionAbbr: string]: playerId | null } }
+type PlayerPositionsPlan = Record<number, Record<string, string | null>>;
 
-function MatchPlanner({ match, gameFormat, positions, players }: { match: any, gameFormat: any, positions: any[], players: any[] }) {
-    // Placeholder for planner UI
+function MatchPlanner({ match, gameFormat, positions, players, matchPlans }: { match: any, gameFormat: any, positions: any[], players: any[], matchPlans: any[] }) {
+    const { toast } = useToast();
+    const { user } = useUser();
+    const firestore = useFirestore();
+    const [plan, setPlan] = useState<PlayerPositionsPlan>({});
+    const lastUpdatedPeriod = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (!gameFormat || !positions || !matchPlans) return;
+        
+        const initialPlan: PlayerPositionsPlan = {};
+        for (let i = 1; i <= gameFormat.numberOfPeriods; i++) {
+            initialPlan[i] = positions.reduce((acc, pos) => ({ ...acc, [pos.abbreviation]: null }), {});
+        }
+
+        matchPlans.forEach(mp => {
+            if (mp.quarter >= 1 && mp.quarter <= gameFormat.numberOfPeriods) {
+                if (!initialPlan[mp.quarter]) {
+                    initialPlan[mp.quarter] = positions.reduce((acc, pos) => ({ ...acc, [pos.abbreviation]: null }), {});
+                }
+                mp.playerPositions.forEach((p: { position: string, playerId: string }) => {
+                    if (initialPlan[mp.quarter].hasOwnProperty(p.position)) {
+                        initialPlan[mp.quarter][p.position] = p.playerId;
+                    }
+                });
+            }
+        });
+        setPlan(initialPlan);
+    }, [matchPlans, gameFormat, positions]);
+
+    useEffect(() => {
+        if (lastUpdatedPeriod.current === null) return;
+        
+        const period = lastUpdatedPeriod.current;
+        const periodPlan = plan[period];
+
+        if (!user || !match || !periodPlan) return;
+        
+        const matchPlanDoc = matchPlans.find(mp => mp.quarter === period);
+
+        if (!matchPlanDoc) {
+             console.error(`Match plan for period ${period} not found!`);
+             toast({ variant: "destructive", title: "Error", description: `Could not find plan for period ${period}.`});
+             return;
+        }
+
+        const playerPositionsForFirestore = Object.entries(periodPlan)
+            .filter(([, playerId]) => playerId !== null)
+            .map(([position, playerId]) => ({ position, playerId }));
+
+        const planRef = doc(firestore, `users/${user.uid}/matches/${match.id}/matchPlans`, matchPlanDoc.id);
+        
+        updateDocumentNonBlocking(planRef, { playerPositions: playerPositionsForFirestore });
+        
+        toast({ title: `Period ${period} plan updated.`});
+
+        lastUpdatedPeriod.current = null;
+
+    }, [plan, user, match, matchPlans, firestore, toast]);
+
+
+    const handleDrop = (e: DragEvent<HTMLDivElement>, period: number, positionAbbr: string) => {
+        e.preventDefault();
+        const playerId = e.dataTransfer.getData("playerId");
+        if (!playerId) return;
+
+        lastUpdatedPeriod.current = period;
+
+        setPlan(currentPlan => {
+            const newPlan = JSON.parse(JSON.stringify(currentPlan));
+            const periodPlan = newPlan[period];
+            
+            const oldPosOfDraggedPlayer = Object.keys(periodPlan).find(p => periodPlan[p] === playerId);
+            const currentOccupantId = periodPlan[positionAbbr];
+            
+            if (oldPosOfDraggedPlayer) {
+                periodPlan[oldPosOfDraggedPlayer] = currentOccupantId;
+            }
+            
+            periodPlan[positionAbbr] = playerId;
+            return newPlan;
+        });
+    };
+
+    const handleBenchDrop = (e: DragEvent<HTMLDivElement>, period: number) => {
+        e.preventDefault();
+        const playerId = e.dataTransfer.getData("playerId");
+        if (!playerId) return;
+
+        lastUpdatedPeriod.current = period;
+
+        setPlan(currentPlan => {
+            const newPlan = JSON.parse(JSON.stringify(currentPlan));
+            const periodPlan = newPlan[period];
+            const oldPos = Object.keys(periodPlan).find(p => periodPlan[p] === playerId);
+            if (oldPos) {
+                periodPlan[oldPos] = null;
+            }
+            return newPlan;
+        });
+    };
+    
+    const handleDragStart = (e: DragEvent<HTMLDivElement>, playerId: string) => e.dataTransfer.setData("playerId", playerId);
+    const allowDrop = (e: DragEvent<HTMLDivElement>) => e.preventDefault();
+
+    const PlayerCard = ({ player, timeInfo, onDragStart, className }: { player: any; timeInfo: any; onDragStart: (e: DragEvent<HTMLDivElement>) => void; className?: string }) => (
+        <div draggable onDragStart={onDragStart} className={cn("p-2 rounded-md bg-card border text-card-foreground shadow-sm cursor-grab active:cursor-grabbing", className)}>
+            <div className="flex justify-between items-center mb-1">
+                <span className="font-semibold text-sm">{player.name}</span>
+                <Badge variant="secondary" className="font-mono text-xs">{formatTime(timeInfo?.total || 0)}</Badge>
+            </div>
+            <div className="text-xs text-muted-foreground space-y-0.5">
+                {timeInfo && Object.entries(timeInfo.positions).length > 0 ? (
+                    Object.entries(timeInfo.positions).map(([pos, time]) => (
+                        (time as number) > 0 && 
+                        <div key={pos} className="flex justify-between">
+                            <span>{pos}:</span>
+                            <span className="font-mono">{formatTime(time as number)}</span>
+                        </div>
+                    ))
+                ) : <p className="text-center">No time planned</p>}
+            </div>
+        </div>
+    );
+    
+    const timeCalculations = useMemo(() => {
+        if (!players || !gameFormat || Object.keys(plan).length === 0) return {};
+    
+        const runningTotals: Record<number, Record<string, { total: number, positions: Record<string, number> }>> = {};
+        const periodDuration = gameFormat.periodDuration * 60;
+    
+        for (let i = 1; i <= gameFormat.numberOfPeriods; i++) {
+            runningTotals[i] = players.reduce((acc, p) => ({ ...acc, [p.id]: { total: 0, positions: {} } }), {});
+        }
+    
+        for (let i = 1; i <= gameFormat.numberOfPeriods; i++) {
+            if (i > 1) {
+                players.forEach(p => {
+                    runningTotals[i][p.id] = JSON.parse(JSON.stringify(runningTotals[i-1][p.id]));
+                });
+            }
+    
+            const periodPlan = plan[i] || {};
+            Object.entries(periodPlan).forEach(([pos, playerId]) => {
+                if (playerId && runningTotals[i][playerId]) {
+                    const playerPeriodData = runningTotals[i][playerId];
+                    playerPeriodData.total += periodDuration;
+                    if (!playerPeriodData.positions[pos]) {
+                        playerPeriodData.positions[pos] = 0;
+                    }
+                    playerPeriodData.positions[pos] += periodDuration;
+                }
+            });
+        }
+        return runningTotals;
+    }, [plan, players, gameFormat]);
+    
+    const formatTime = (seconds: number) => `${Math.floor(seconds / 60)}m`;
+    
+    if (!players || !gameFormat || !positions || !matchPlans) {
+        return (
+            <Card>
+                <CardHeader>
+                    <CardTitle>Match Planner</CardTitle>
+                </CardHeader>
+                <CardContent className="text-center">
+                    <p className="text-muted-foreground">Loading planner data...</p>
+                </CardContent>
+            </Card>
+        );
+    }
+
     return (
-        <Card className="min-h-[500px]">
-            <CardHeader>
-                <CardTitle>Match Planner</CardTitle>
-                <CardDescription>Plan your substitutions for each quarter of the game. Drag players to positions.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <p className="text-muted-foreground text-center pt-20">Match planner interface coming soon!</p>
-            </CardContent>
-        </Card>
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                {Array.from({ length: gameFormat.numberOfPeriods }, (_, i) => i + 1).map(period => {
+                    const periodPlan = plan[period] || {};
+                    const periodTimeTotals = timeCalculations[period] || {};
+                    const onCourtPlayerIds = Object.values(periodPlan).filter(Boolean);
+                    const benchedPlayers = players.filter(p => !onCourtPlayerIds.includes(p.id));
+
+                    return (
+                        <Card key={period} className="flex flex-col">
+                            <CardHeader>
+                                <CardTitle>Period {period}</CardTitle>
+                            </CardHeader>
+                            <CardContent className="flex-grow space-y-4">
+                                <h3 className="font-semibold text-center text-muted-foreground border-b pb-2">On Court ({onCourtPlayerIds.length})</h3>
+                                <div className="space-y-3 min-h-[280px]">
+                                    {positions.map(position => {
+                                        const playerId = periodPlan[position.abbreviation];
+                                        const player = players.find(p => p.id === playerId);
+                                        const Icon = iconMap[position.icon] || User;
+                                        return (
+                                            <div key={position.id} onDrop={(e) => handleDrop(e, period, position.abbreviation)} onDragOver={allowDrop} className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1 w-12 text-muted-foreground">
+                                                    <Icon className="h-4 w-4" />
+                                                    <span className="font-bold text-xs">{position.abbreviation}</span>
+                                                </div>
+                                                <div className={cn("flex-grow h-auto min-h-[4rem] rounded-md border-2 border-dashed flex items-center justify-center", player ? 'border-primary/50' : 'border-muted/50')}>
+                                                    {player ? <PlayerCard player={player} timeInfo={periodTimeTotals[player.id]} onDragStart={(e) => handleDragStart(e, player.id)} className="w-full" /> : <span className="text-xs text-muted-foreground">Empty</span>}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <h3 className="font-semibold text-center text-muted-foreground border-b pb-2 pt-4">Bench ({benchedPlayers.length})</h3>
+                                <div onDrop={(e) => handleBenchDrop(e, period)} onDragOver={allowDrop} className="p-2 rounded-md border-2 border-dashed border-muted/50 min-h-[100px] flex-grow bg-muted/20">
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {benchedPlayers.map(player => (
+                                            <PlayerCard key={player.id} player={player} timeInfo={periodTimeTotals[player.id]} onDragStart={(e) => handleDragStart(e, player.id)} />
+                                        ))}
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    );
+                })}
+            </div>
+        </div>
     );
 }
 
@@ -336,7 +550,13 @@ export default function GamePage() {
   }, [firestore, user, match]);
   const { data: players, isLoading: arePlayersLoading } = useCollection(playersQuery);
   
-  const isLoading = isUserLoading || isMatchLoading || arePlayersLoading || isGameFormatLoading || arePositionsLoading;
+  const matchPlansQuery = useMemoFirebase(() => {
+    if (!user || !gameId) return null;
+    return collection(firestore, 'users', user.uid, 'matches', gameId, 'matchPlans');
+  }, [firestore, user, gameId]);
+  const { data: matchPlans, isLoading: areMatchPlansLoading } = useCollection(matchPlansQuery);
+
+  const isLoading = isUserLoading || isMatchLoading || arePlayersLoading || isGameFormatLoading || arePositionsLoading || areMatchPlansLoading;
 
   if (isLoading) {
     return (
@@ -356,7 +576,7 @@ export default function GamePage() {
     );
   }
 
-  if (!match || !gameFormat || !positions || !players) {
+  if (!match || !gameFormat || !positions || !players || !matchPlans) {
     return (
       <div className="container mx-auto py-8 px-4 max-w-xl">
         <Alert variant="destructive">
@@ -390,10 +610,13 @@ export default function GamePage() {
           <LiveGameTracker match={match} gameFormat={gameFormat} positions={positions} players={players} />
         </TabsContent>
         <TabsContent value="plan">
-          <MatchPlanner match={match} gameFormat={gameFormat} positions={positions} players={players} />
+          <MatchPlanner match={match} gameFormat={gameFormat} positions={positions} players={players} matchPlans={matchPlans} />
         </TabsContent>
       </Tabs>
 
     </div>
   );
 }
+ 
+
+    

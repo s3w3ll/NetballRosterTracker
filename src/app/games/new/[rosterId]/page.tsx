@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { doc, setDoc, collection, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, collection, writeBatch, getDocs } from 'firebase/firestore';
 import { useDoc, useFirestore, useUser, useMemoFirebase, useCollection } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 
@@ -113,6 +113,10 @@ export default function GameSetupPage() {
 
   const form = useForm<GameSetupFormData>({
     resolver: zodResolver(gameSetupSchema),
+    defaultValues: {
+      numberOfPeriods: 0,
+      periodDuration: 0,
+    }
   });
 
   const selectedFormatId = form.watch('gameFormatId');
@@ -132,15 +136,13 @@ export default function GameSetupPage() {
         return;
     };
 
-    // We need to create a temporary, one-off game format for this match
-    // to store the potentially modified settings.
-    const tempGameFormatId = uuidv4();
     const originalFormat = gameFormats?.find(f => f.id === data.gameFormatId);
     if (!originalFormat) {
        toast({ variant: "destructive", title: "Error", description: "Selected game format not found." });
        return;
     }
 
+    const tempGameFormatId = uuidv4();
     const tempGameFormat = {
       ...originalFormat,
       id: tempGameFormatId,
@@ -153,6 +155,15 @@ export default function GameSetupPage() {
     const batch = writeBatch(firestore);
     const tempFormatRef = doc(firestore, `users/${user.uid}/gameFormats`, tempGameFormatId);
     batch.set(tempFormatRef, tempGameFormat);
+    
+    // Fetch and copy positions
+    const positionsQuery = collection(firestore, `users/${user.uid}/gameFormats/${originalFormat.id}/positions`);
+    const positionsSnapshot = await getDocs(positionsQuery);
+    positionsSnapshot.forEach(positionDoc => {
+        const positionData = positionDoc.data();
+        const newPositionRef = doc(firestore, `users/${user.uid}/gameFormats/${tempGameFormatId}/positions`, positionDoc.id);
+        batch.set(newPositionRef, { ...positionData, gameFormatId: tempGameFormatId });
+    });
 
 
     const matchId = uuidv4();

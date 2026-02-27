@@ -7,8 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Timer, Users, User, Shield, Target, Circle, Feather, Footprints, Play, Pause, RefreshCw, ArrowRight, Clock } from 'lucide-react';
-import { useState, useEffect, useMemo, DragEvent } from 'react';
+import { Timer, Users, User, Shield, Target, Circle, Feather, Footprints, Play, Pause, RefreshCw, ArrowRight } from 'lucide-react';
+import { useState, useEffect, useMemo, DragEvent, useRef, useCallback } from 'react';
 import { type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -34,14 +34,14 @@ export default function GameTrackerPage() {
   const [courtPositions, setCourtPositions] = useState<Record<string, string | null>>({});
   
   const [isActive, setIsActive] = useState(false);
-  const [time, setTime] = useState(0);
+  const [time, setTime] = useState(0); // This is the time remaining in the period
   const [currentPeriod, setCurrentPeriod] = useState(1);
   
-  // Total time player has been on court
   const [playerTimeOnCourt, setPlayerTimeOnCourt] = useState<Record<string, number>>({});
-  // Time player has spent in each specific position
   const [playerTimeInPosition, setPlayerTimeInPosition] = useState<Record<string, Record<string, number>>>({});
 
+  const lastUpdateTime = useRef<number | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const matchRef = useMemoFirebase(() => {
     if (!user || !gameId) return null;
@@ -73,6 +73,41 @@ export default function GameTrackerPage() {
   
   const onCourtPlayerIds = useMemo(() => Object.values(courtPositions).filter(Boolean) as string[], [courtPositions]);
   
+  const updatePlayerTimes = useCallback(() => {
+    if (!isActive) {
+        lastUpdateTime.current = null; // Ensure we don't calculate time when paused
+        return;
+    }
+
+    const now = Date.now();
+    const timeElapsedSeconds = lastUpdateTime.current ? Math.round((now - lastUpdateTime.current) / 1000) : 0;
+    lastUpdateTime.current = now;
+
+    if (timeElapsedSeconds <= 0) return;
+
+    setPlayerTimeInPosition(currentPosTimes => {
+        const newPosTimes = JSON.parse(JSON.stringify(currentPosTimes));
+        Object.entries(courtPositions).forEach(([posAbbr, playerId]) => {
+            if (playerId) {
+                if (!newPosTimes[playerId]) newPosTimes[playerId] = {};
+                newPosTimes[playerId][posAbbr] = (newPosTimes[playerId][posAbbr] || 0) + timeElapsedSeconds;
+            }
+        });
+        
+        // Derive total court time from the new position times
+        setPlayerTimeOnCourt(currentCourtTimes => {
+            const newCourtTimes = { ...currentCourtTimes };
+            Object.keys(newPosTimes).forEach(playerId => {
+                newCourtTimes[playerId] = Object.values(newPosTimes[playerId]).reduce((sum: number, time: any) => sum + time, 0);
+            });
+            return newCourtTimes;
+        });
+
+        return newPosTimes;
+    });
+}, [courtPositions, isActive]);
+
+  
   useEffect(() => {
     if (players && positions) {
       const initialTimeOnCourt = players.reduce((acc, player) => ({ ...acc, [player.id]: 0 }), {});
@@ -86,7 +121,6 @@ export default function GameTrackerPage() {
       setPlayerTimeInPosition(initialTimeInPosition);
     }
   }, [players, positions]);
-
 
   useEffect(() => {
     if (gameFormat) {
@@ -102,49 +136,48 @@ export default function GameTrackerPage() {
   }, [positions]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (isActive && time > 0) {
-      interval = setInterval(() => {
-        setTime((prevTime) => prevTime - 1);
-
-        setPlayerTimeOnCourt(prevTimes => {
-            const newTimes = { ...prevTimes };
-            onCourtPlayerIds.forEach(playerId => {
-                newTimes[playerId] = (newTimes[playerId] || 0) + 1;
-            });
-            return newTimes;
-        });
-
-        setPlayerTimeInPosition(prevTimes => {
-          const newTimes = { ...prevTimes };
-          Object.entries(courtPositions).forEach(([posAbbr, playerId]) => {
-            if(playerId) {
-              if(!newTimes[playerId]) newTimes[playerId] = {};
-              newTimes[playerId][posAbbr] = (newTimes[playerId][posAbbr] || 0) + 1;
+    if (isActive) {
+      if (lastUpdateTime.current === null) {
+          lastUpdateTime.current = Date.now();
+      }
+      intervalRef.current = setInterval(() => {
+        setTime(prevTime => {
+            if (prevTime <= 1) {
+                if (intervalRef.current) clearInterval(intervalRef.current);
+                updatePlayerTimes(); // Final update
+                setIsActive(false);
+                lastUpdateTime.current = null;
+                return 0;
             }
-          });
-          return newTimes;
+            updatePlayerTimes();
+            return prevTime - 1;
         });
-
       }, 1000);
-    } else if (time === 0 && isActive) {
-        setIsActive(false);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        updatePlayerTimes(); // Update on pause
+        lastUpdateTime.current = null;
+      }
     }
+
     return () => {
-      if (interval) clearInterval(interval);
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isActive, time, courtPositions, onCourtPlayerIds]);
+  }, [isActive, updatePlayerTimes]);
 
 
   const isLoading = isUserLoading || isMatchLoading || arePlayersLoading || isGameFormatLoading || arePositionsLoading;
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
+    const remainingSeconds = Math.floor(seconds % 60);
     return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
   };
 
-  const toggleTimer = () => setIsActive(!isActive);
+  const toggleTimer = () => {
+    setIsActive(!isActive);
+  };
 
   const resetTimer = () => {
     setIsActive(false);
@@ -152,32 +185,43 @@ export default function GameTrackerPage() {
   };
   
   const advancePeriod = () => {
-    if (gameFormat && currentPeriod < gameFormat.numberOfPeriods) {
-        const timePlayedThisPeriod = (gameFormat.periodDuration * 60) - time;
-        if(timePlayedThisPeriod > 0 && isActive) {
-             setPlayerTimeOnCourt(prevTimes => {
-                const newTimes = { ...prevTimes };
-                onCourtPlayerIds.forEach(playerId => {
-                    newTimes[playerId] = (newTimes[playerId] || 0) + timePlayedThisPeriod;
-                });
-                return newTimes;
-            });
-             setPlayerTimeInPosition(prevTimes => {
-              const newTimes = { ...prevTimes };
-              Object.entries(courtPositions).forEach(([posAbbr, playerId]) => {
-                if(playerId) {
-                  if(!newTimes[playerId]) newTimes[playerId] = {};
-                  newTimes[playerId][posAbbr] = (newTimes[playerId][posAbbr] || 0) + timePlayedThisPeriod;
-                }
-              });
-              return newTimes;
-            });
-        }
-       
-        setCurrentPeriod(prev => prev + 1);
-        resetTimer();
+    if (!gameFormat || currentPeriod >= gameFormat.numberOfPeriods) return;
+
+    if (isActive) {
+      setIsActive(false); // Pause timer, which triggers a final time update
     }
-  }
+
+    const timeRemaining = time;
+
+    if (timeRemaining > 0) {
+      // Create new state objects based on the current state
+      setPlayerTimeInPosition(currentPosTimes => {
+          const newPosTimes = JSON.parse(JSON.stringify(currentPosTimes));
+          Object.entries(courtPositions).forEach(([posAbbr, playerId]) => {
+              if (playerId) {
+                  if (!newPosTimes[playerId]) newPosTimes[playerId] = {};
+                  newPosTimes[playerId][posAbbr] = (newPosTimes[playerId][posAbbr] || 0) + timeRemaining;
+              }
+          });
+
+          // Derive total court time from the newly updated position times
+          setPlayerTimeOnCourt(currentCourtTimes => {
+              const newCourtTimes = { ...currentCourtTimes };
+              Object.keys(newPosTimes).forEach(playerId => {
+                  newCourtTimes[playerId] = Object.values(newPosTimes[playerId]).reduce((sum: number, time: any) => sum + time, 0);
+              });
+              return newCourtTimes;
+          });
+
+          return newPosTimes;
+      });
+    }
+
+    // Advance to the next period
+    setCurrentPeriod(prev => prev + 1);
+    setTime(gameFormat.periodDuration * 60);
+    lastUpdateTime.current = null; // Reset for the new period
+  };
 
   const handleDragStart = (e: DragEvent<HTMLDivElement>, playerId: string) => {
     e.dataTransfer.setData("playerId", playerId);
@@ -188,6 +232,8 @@ export default function GameTrackerPage() {
       const playerId = e.dataTransfer.getData("playerId");
       if (!playerId) return;
 
+      updatePlayerTimes();
+
       setCourtPositions(prev => {
           const newPositions = { ...prev };
           const currentOccupantId = newPositions[positionAbbr];
@@ -195,7 +241,6 @@ export default function GameTrackerPage() {
           const oldPosOfDraggedPlayer = Object.keys(newPositions).find(p => newPositions[p] === playerId);
 
           if (oldPosOfDraggedPlayer) {
-              // The dragged player was already on court, so we swap
               newPositions[oldPosOfDraggedPlayer] = currentOccupantId;
           }
 
@@ -209,11 +254,13 @@ export default function GameTrackerPage() {
     const playerId = e.dataTransfer.getData("playerId");
     if (!playerId) return;
 
+    updatePlayerTimes();
+
     setCourtPositions(prev => {
         const newPositions = { ...prev };
         const oldPosOfDraggedPlayer = Object.keys(newPositions).find(p => newPositions[p] === playerId);
         if (oldPosOfDraggedPlayer) {
-            newPositions[oldPosOfDraggedPlayer] = null; // Move player to bench
+            newPositions[oldPosOfDraggedPlayer] = null;
         }
         return newPositions;
     });
@@ -241,12 +288,12 @@ export default function GameTrackerPage() {
                 <Badge variant="secondary" className="font-mono text-xs">{formatTime(totalTime)}</Badge>
             </div>
             <div className="grid grid-cols-3 gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                {positions && positions.map(pos => {
-                    const timeInPos = positionTimes[pos.abbreviation] || 0;
-                    return timeInPos > 0 ? (
-                        <div key={pos.abbreviation} className="flex items-center gap-1">
-                            <span className="font-semibold">{pos.abbreviation}:</span>
-                            <span className="font-mono">{formatTime(timeInPos)}</span>
+                {positions && Object.entries(positionTimes).map(([posAbbr, timeInPos]) => {
+                    const time = timeInPos || 0;
+                    return time > 0 ? (
+                        <div key={posAbbr} className="flex items-center gap-1">
+                            <span className="font-semibold">{posAbbr}:</span>
+                            <span className="font-mono">{formatTime(time)}</span>
                         </div>
                     ) : null;
                 })}
@@ -290,7 +337,7 @@ export default function GameTrackerPage() {
     <div className="container mx-auto py-8 px-4">
       <div className="text-center mb-8">
         <h1 className="text-3xl font-bold font-headline">Live Game</h1>
-        <p className="text-muted-foreground">Tracking court time for <span className='font-bold text-primary'>{match.name}</span>.</p>
+        <p className="text-muted-foreground">Tracking court time for <span className='font-bold text-primary'>{match.name || `vs ${match.opponent}`}</span>.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -353,7 +400,9 @@ export default function GameTrackerPage() {
                                   <span className="font-bold text-primary">{position.abbreviation}</span>
                                 </div>
                                 {player ? (
-                                    <PlayerCard player={player} />
+                                    <PlayerCard
+                                      player={player}
+                                    />
                                 ) : (
                                     <span className="text-xs text-muted-foreground">Empty</span>
                                 )}
@@ -376,7 +425,10 @@ export default function GameTrackerPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                     {benchedPlayers.map(player => (
-                        <PlayerCard key={player.id} player={player} />
+                        <PlayerCard
+                          key={player.id}
+                          player={player}
+                        />
                     ))}
                     {benchedPlayers.length === 0 && <p className="text-sm text-center text-muted-foreground pt-10">No players on the bench</p>}
                 </CardContent>

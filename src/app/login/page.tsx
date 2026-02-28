@@ -4,16 +4,15 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { Zap, Loader2 } from 'lucide-react';
 import { useFirebase } from '@/firebase';
-import { signInWithGoogle, signInWithMicrosoft } from '@/firebase/non-blocking-login';
+import { signInWithGoogle } from '@/firebase/non-blocking-login';
 
 export default function LoginPage() {
   const { auth, user, isUserLoading } = useFirebase();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [isSigningIn, setIsSigningIn] = useState<'google' | 'microsoft' | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState<'google' | null>(null);
 
   // If already authenticated (non-anonymous), redirect to home
   useEffect(() => {
@@ -37,27 +36,6 @@ export default function LoginPage() {
         // User closed the popup — not an error
       } else {
         setError(firebaseError.message || 'Failed to sign in with Google');
-      }
-    } finally {
-      setIsSigningIn(null);
-    }
-  };
-
-  const handleMicrosoftSignIn = async () => {
-    setError(null);
-    setIsSigningIn('microsoft');
-    try {
-      await signInWithMicrosoft(auth);
-      router.push('/');
-    } catch (err: unknown) {
-      const firebaseError = err as { code?: string; message?: string };
-      if (
-        firebaseError.code === 'auth/popup-closed-by-user' ||
-        firebaseError.code === 'auth/cancelled-popup-request'
-      ) {
-        // User closed the popup — not an error
-      } else {
-        setError(firebaseError.message || 'Failed to sign in with Microsoft');
       }
     } finally {
       setIsSigningIn(null);
@@ -111,28 +89,7 @@ export default function LoginPage() {
             Sign in with Google
           </Button>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <Separator />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">or</span>
-            </div>
-          </div>
-
-          <Button
-            variant="outline"
-            className="w-full h-12 text-base"
-            onClick={handleMicrosoftSignIn}
-            disabled={isSigningIn !== null}
-          >
-            {isSigningIn === 'microsoft' ? (
-              <Loader2 className="mr-3 h-5 w-5 animate-spin" />
-            ) : (
-              <MicrosoftIcon className="mr-3 h-5 w-5" />
-            )}
-            Sign in with Microsoft
-          </Button>
+          {/* Microsoft sign-in can be added here later once Azure AD is configured */}
         </CardContent>
       </Card>
     </div>
@@ -163,14 +120,3 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-/** Microsoft four-square logo — official brand colours. */
-function MicrosoftIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 23 23">
-      <path fill="#f35325" d="M1 1h10v10H1z" />
-      <path fill="#81bc06" d="M12 1h10v10H12z" />
-      <path fill="#05a6f0" d="M1 12h10v10H1z" />
-      <path fill="#ffba08" d="M12 12h10v10H12z" />
-    </svg>
-  );
-}

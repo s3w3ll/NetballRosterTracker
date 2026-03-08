@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Header } from '@/components/shared/Header';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import { SpaRedirectHandler } from '@/components/shared/SpaRedirectHandler';
 
 export const metadata: Metadata = {
   title: 'CourtTime - Netball Tracker',
@@ -24,6 +25,7 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased min-h-screen bg-background">
         <FirebaseClientProvider>
+            <SpaRedirectHandler />
             <div className="relative flex min-h-dvh flex-col">
               <Header />
               <main className="flex-1">

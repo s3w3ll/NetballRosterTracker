@@ -43,10 +43,9 @@ jobs:
           NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
 
-      # Copy index.html → 404.html so GitHub Pages serves the SPA shell
-      # for any direct URL (e.g. bookmarked /games/abc123) instead of a raw 404
-      - name: Create SPA 404 fallback
-        run: cp out/index.html out/404.html
+      # public/404.html is automatically included in the build output.
+      # It stores the requested URL in sessionStorage and redirects to "/",
+      # where SpaRedirectHandler navigates back to the original route.
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

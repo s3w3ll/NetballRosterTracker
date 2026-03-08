@@ -29,6 +29,21 @@ const iconMap: Record<string, LucideIcon> = {
     Footprints,
 };
 
+// Positions as (x%, y%) of the 280×560 court container — attack end at top, defence at bottom.
+const NETBALL_COURT_SLOTS: Record<string, { x: number; y: number }> = {
+  GS: { x: 50,   y: 9.8  },
+  GA: { x: 28.6, y: 23.2 },
+  WA: { x: 71.4, y: 37.5 },
+  C:  { x: 50,   y: 50   },
+  WD: { x: 28.6, y: 62.5 },
+  GD: { x: 71.4, y: 76.8 },
+  GK: { x: 50,   y: 90.2 },
+};
+
+function hasNetballCourtLayout(abbrs: string[]): boolean {
+  return abbrs.length === 7 && abbrs.every(a => a in NETBALL_COURT_SLOTS);
+}
+
 function LiveGameTracker({ match, gameFormat, positions, players }: { match: any, gameFormat: any, positions: any[], players: any[] }) {
   const [courtPositions, setCourtPositions] = useState<Record<string, string | null>>({});
 
@@ -198,6 +213,8 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
     e.dataTransfer.dropEffect = 'move';
   };
 
+  const useCourtLayout = positions ? hasNetballCourtLayout(positions.map(p => p.abbreviation)) : false;
+
   const benchedPlayers = players?.filter(p => !onCourtPlayerIds.includes(p.id)) || [];
 
   const PlayerCard = ({ player }: { player: any }) => (
@@ -256,31 +273,110 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
-            <Card className="bg-primary/5 min-h-[400px]">
+            <Card className="bg-primary/5">
                 <CardHeader>
                     <CardTitle>Court</CardTitle>
                     <CardDescription>Drag players from the bench to a position on the court.</CardDescription>
                 </CardHeader>
-                <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    {positions?.map(position => {
-                        const playerId = courtPositions[position.abbreviation];
-                        const player = players?.find(p => p.id === playerId);
-                        const Icon = iconMap[position.icon] || User;
-                        return (
-                            <div
-                                key={position.id}
-                                onDrop={(e) => handleDrop(e, position.abbreviation)}
-                                onDragOver={allowDrop}
-                                className={cn("p-4 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 min-h-[100px] transition-colors", player ? "border-primary bg-primary/10" : isDragging ? "border-primary/70 bg-primary/5 ring-2 ring-primary/20" : "border-muted-foreground/50 bg-background/30")}
-                            >
-                                <div className="flex items-center gap-2">
-                                  <Icon className="h-5 w-5 text-primary" />
-                                  <span className="font-bold text-primary">{position.abbreviation}</span>
-                                </div>
-                                {player ? <PlayerCard player={player}/> : <span className="text-xs text-muted-foreground">Empty</span>}
-                            </div>
-                        )
-                    })}
+                <CardContent className={cn(useCourtLayout ? "flex justify-center pb-6" : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4")}>
+                    {useCourtLayout ? (
+                        /* SVG netball court for 7-aside: attack end (GS/GA) at top, defence (GK/GD) at bottom */
+                        <div className="relative rounded-lg overflow-hidden" style={{ width: '280px', height: '560px' }}>
+                            <svg viewBox="0 0 280 560" width="280" height="560" xmlns="http://www.w3.org/2000/svg">
+                                <defs>
+                                    <linearGradient id="ncGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#1a5c30" />
+                                        <stop offset="50%" stopColor="#1e6b38" />
+                                        <stop offset="100%" stopColor="#1a5c30" />
+                                    </linearGradient>
+                                </defs>
+                                {/* Background */}
+                                <rect width="280" height="560" fill="url(#ncGrad)" rx="6" />
+                                {/* Court outline */}
+                                <rect x="10" y="10" width="260" height="540" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                {/* Third lines: 540/3=180px each, from y=10 */}
+                                <line x1="10" y1="190" x2="270" y2="190" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                <line x1="10" y1="370" x2="270" y2="370" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                {/* Centre circle r=16 (~0.9m) */}
+                                <circle cx="140" cy="280" r="16" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                <circle cx="140" cy="280" r="2" fill="rgba(255,255,255,0.75)" />
+                                {/* Goal D arcs r=87 (~4.9m) */}
+                                <path d="M 53 10 A 87 87 0 0 1 227 10" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                <path d="M 227 550 A 87 87 0 0 0 53 550" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                {/* Goal posts — yellow rectangles */}
+                                <rect x="134" y="5" width="12" height="9" rx="2" fill="#FFC107" />
+                                <rect x="134" y="546" width="12" height="9" rx="2" fill="#FFC107" />
+                                {/* End labels */}
+                                <text x="140" y="32" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.4)" letterSpacing="1.5" fontFamily="sans-serif">ATTACK</text>
+                                <text x="140" y="536" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.4)" letterSpacing="1.5" fontFamily="sans-serif">DEFENCE</text>
+                            </svg>
+                            {positions?.map(position => {
+                                const slot = NETBALL_COURT_SLOTS[position.abbreviation];
+                                if (!slot) return null;
+                                const playerId = courtPositions[position.abbreviation];
+                                const player = players?.find(p => p.id === playerId);
+                                return (
+                                    <div
+                                        key={position.id}
+                                        draggable={!!player}
+                                        onDragStart={player ? (e) => handleDragStart(e, player.id) : undefined}
+                                        onDragEnd={handleDragEnd}
+                                        onDrop={(e) => handleDrop(e, position.abbreviation)}
+                                        onDragOver={allowDrop}
+                                        style={{
+                                            position: 'absolute',
+                                            left: `calc(${slot.x}% - 32px)`,
+                                            top: `calc(${slot.y}% - 32px)`,
+                                            width: '64px',
+                                            height: '64px',
+                                        }}
+                                        className={cn(
+                                            "rounded-full border-2 flex flex-col items-center justify-center text-center transition-all duration-150 z-10 select-none",
+                                            player
+                                                ? "border-primary bg-primary text-primary-foreground shadow-lg cursor-grab active:cursor-grabbing"
+                                                : isDragging
+                                                    ? "border-yellow-300/70 bg-black/40 border-dashed"
+                                                    : "border-white/50 bg-black/25 border-dashed"
+                                        )}
+                                    >
+                                        {player ? (
+                                            <>
+                                                <span className="text-[9px] font-semibold opacity-75 leading-none">{position.abbreviation}</span>
+                                                <span className="text-[11px] font-bold leading-tight px-1 truncate w-full text-center mt-0.5">
+                                                    {player.name.split(' ')[0]}
+                                                </span>
+                                            </>
+                                        ) : (
+                                            <span className="text-white/80 text-xs font-bold">{position.abbreviation}</span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        /* Grid fallback for non-7-aside game formats */
+                        <>
+                            {positions?.map(position => {
+                                const playerId = courtPositions[position.abbreviation];
+                                const player = players?.find(p => p.id === playerId);
+                                const Icon = iconMap[position.icon] || User;
+                                return (
+                                    <div
+                                        key={position.id}
+                                        onDrop={(e) => handleDrop(e, position.abbreviation)}
+                                        onDragOver={allowDrop}
+                                        className={cn("p-4 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 min-h-[100px] transition-colors", player ? "border-primary bg-primary/10" : isDragging ? "border-primary/70 bg-primary/5 ring-2 ring-primary/20" : "border-muted-foreground/50 bg-background/30")}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                          <Icon className="h-5 w-5 text-primary" />
+                                          <span className="font-bold text-primary">{position.abbreviation}</span>
+                                        </div>
+                                        {player ? <PlayerCard player={player}/> : <span className="text-xs text-muted-foreground">Empty</span>}
+                                    </div>
+                                )
+                            })}
+                        </>
+                    )}
                 </CardContent>
             </Card>
         </div>

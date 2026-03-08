@@ -6,17 +6,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Zap, Loader2 } from 'lucide-react';
 import { useFirebase } from '@/firebase';
-import { signInWithGoogle } from '@/firebase/non-blocking-login';
+import { signInWithGoogle, initiateAnonymousSignIn } from '@/firebase/non-blocking-login';
 
 export default function LoginPage() {
   const { auth, user, isUserLoading } = useFirebase();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [isSigningIn, setIsSigningIn] = useState<'google' | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState<'google' | 'anonymous' | null>(null);
 
-  // If already authenticated (non-anonymous), redirect to home
+  // If already authenticated, redirect to home
   useEffect(() => {
-    if (!isUserLoading && user && !user.isAnonymous) {
+    if (!isUserLoading && user) {
       router.push('/');
     }
   }, [user, isUserLoading, router]);
@@ -90,6 +90,27 @@ export default function LoginPage() {
           </Button>
 
           {/* Microsoft sign-in can be added here later once Azure AD is configured */}
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">or</span>
+            </div>
+          </div>
+
+          <Button
+            variant="ghost"
+            className="w-full h-10 text-sm text-muted-foreground"
+            onClick={() => {
+              setIsSigningIn('anonymous');
+              initiateAnonymousSignIn(auth);
+            }}
+            disabled={isSigningIn !== null}
+          >
+            Continue as Guest
+          </Button>
         </CardContent>
       </Card>
     </div>

@@ -105,11 +105,13 @@ export default function GameSetupPage() {
 
   useEffect(() => {
     if (firestore && user && !areFormatsLoading && gameFormats?.length === 0 && !hasCreatedDefaults) {
-      createDefaultFormats(firestore, user.uid).then(() => {
-        setHasCreatedDefaults(true); // Prevent re-running
-      });
+      createDefaultFormats(firestore, user.uid)
+        .then(() => setHasCreatedDefaults(true))
+        .catch((err) => {
+          toast({ variant: 'destructive', title: 'Setup Error', description: err?.message || 'Could not create default game formats.' });
+        });
     }
-  }, [firestore, user, areFormatsLoading, gameFormats, hasCreatedDefaults]);
+  }, [firestore, user, areFormatsLoading, gameFormats, hasCreatedDefaults, toast]);
 
   const form = useForm<GameSetupFormData>({
     resolver: zodResolver(gameSetupSchema),

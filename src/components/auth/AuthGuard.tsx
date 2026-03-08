@@ -21,8 +21,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     (route) => pathname === route || pathname.startsWith(route + '/')
   );
 
-  // A user is considered authenticated only if they're a non-anonymous user
-  const isAuthenticated = !!user && !user.isAnonymous;
+  // Any Firebase user (including anonymous) is considered authenticated
+  const isAuthenticated = !!user;
 
   useEffect(() => {
     if (!isUserLoading && !isAuthenticated && !isPublicRoute) {

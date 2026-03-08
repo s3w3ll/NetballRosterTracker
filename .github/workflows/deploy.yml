@@ -43,9 +43,10 @@ jobs:
           NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
 
-      # public/404.html is automatically included in the build output.
-      # It stores the requested URL in sessionStorage and redirects to "/",
-      # where SpaRedirectHandler navigates back to the original route.
+      # scripts/generate-spa-404.mjs (run as part of "npm run build") overwrites
+      # out/404.html with a pure-HTML sessionStorage redirect. GitHub Pages serves
+      # this for any path with no matching static file (e.g. /games/new/<uuid>).
+      # SpaRedirectHandler in layout.tsx reads the stored path and navigates there.
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

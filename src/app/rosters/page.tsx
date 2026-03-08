@@ -7,10 +7,13 @@ import Link from "next/link";
 import { useUser, useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { collection, query, where } from "firebase/firestore";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useRouter } from "next/navigation";
+import { setNavId } from "@/lib/nav";
 
 export default function RostersPage() {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
+  const router = useRouter();
 
   const rostersQuery = useMemoFirebase(() => {
     if (!user) return null;
@@ -60,10 +63,8 @@ export default function RostersPage() {
                 </div>
               </CardContent>
               <CardFooter>
-                 <Button variant="outline" asChild className="w-full">
-                    <Link href={`/rosters/${roster.id}`}>
-                        Manage Roster <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
+                 <Button variant="outline" className="w-full" onClick={() => { setNavId('rosterId', roster.id); router.push('/rosters/manage'); }}>
+                    Manage Roster <ArrowRight className="ml-2 h-4 w-4" />
                  </Button>
               </CardFooter>
             </Card>

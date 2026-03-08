@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { setNavId } from "@/lib/nav";
 
 export default function NewGamePage() {
     const { user, isUserLoading } = useUser();
@@ -109,7 +110,7 @@ export default function NewGamePage() {
                 <CardFooter>
                     <Button
                         disabled={!rosterId}
-                        onClick={() => rosterId && router.push(`/games/new/${rosterId}`)}
+                        onClick={() => { if (rosterId) { setNavId('rosterId', rosterId); router.push('/games/new/configure'); } }}
                     >
                         Start Game Setup <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>

@@ -9,10 +9,13 @@ import { collection, query } from "firebase/firestore";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { setNavId } from "@/lib/nav";
 
 export default function NewPlanPage() {
     const { user, isUserLoading } = useUser();
     const firestore = useFirestore();
+    const router = useRouter();
     const [rosterId, setRosterId] = useState<string | null>(null);
 
     const rostersQuery = useMemoFirebase(() => {
@@ -104,10 +107,11 @@ export default function NewPlanPage() {
                     </div>
                 </CardContent>
                 <CardFooter>
-                    <Button asChild disabled={!rosterId}>
-                        <Link href={`/plans/new/${rosterId}`}>
-                            Continue to Plan Setup <ArrowRight className="ml-2 h-4 w-4" />
-                        </Link>
+                    <Button
+                        disabled={!rosterId}
+                        onClick={() => { if (rosterId) { setNavId('rosterId', rosterId); router.push('/plans/new/configure'); } }}
+                    >
+                        Continue to Plan Setup <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                 </CardFooter>
             </Card>

@@ -7,10 +7,13 @@ import Link from "next/link";
 import { useUser, useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { collection, query } from "firebase/firestore";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useRouter } from "next/navigation";
+import { setNavId } from "@/lib/nav";
 
 export default function TournamentsPage() {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
+  const router = useRouter();
 
   const tournamentsQuery = useMemoFirebase(() => {
     if (!user) return null;
@@ -55,10 +58,8 @@ export default function TournamentsPage() {
                 
               </CardContent>
               <CardFooter>
-                 <Button variant="outline" asChild className="w-full">
-                    <Link href={`/tournaments/${tournament.id}`}>
-                        View Details <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
+                 <Button variant="outline" className="w-full" onClick={() => { setNavId('tournamentId', tournament.id); router.push('/tournaments/view'); }}>
+                    View Details <ArrowRight className="ml-2 h-4 w-4" />
                  </Button>
               </CardFooter>
             </Card>

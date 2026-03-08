@@ -9,10 +9,12 @@ import { collection, query } from "firebase/firestore";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function NewGamePage() {
     const { user, isUserLoading } = useUser();
     const firestore = useFirestore();
+    const router = useRouter();
     const [rosterId, setRosterId] = useState<string | null>(null);
 
     const rostersQuery = useMemoFirebase(() => {
@@ -105,10 +107,11 @@ export default function NewGamePage() {
                     </div>
                 </CardContent>
                 <CardFooter>
-                    <Button asChild disabled={!rosterId}>
-                        <Link href={`/games/new/${rosterId}`}>
-                            Start Game Setup <ArrowRight className="ml-2 h-4 w-4" />
-                        </Link>
+                    <Button
+                        disabled={!rosterId}
+                        onClick={() => rosterId && router.push(`/games/new/${rosterId}`)}
+                    >
+                        Start Game Setup <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                 </CardFooter>
             </Card>

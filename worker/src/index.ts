@@ -62,7 +62,7 @@ app.onError((err, c) => {
     c.header('Vary', 'Origin')
   }
   console.error(err)
-  return c.json({ error: 'Internal server error' }, 500)
+  return c.json({ error: err.message ?? 'Internal server error' }, 500)
 })
 
 export default app

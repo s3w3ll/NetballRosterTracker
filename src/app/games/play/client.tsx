@@ -29,15 +29,17 @@ const iconMap: Record<string, LucideIcon> = {
     Footprints,
 };
 
-// Positions as (x%, y%) of the 280×560 court container — attack end at top, defence at bottom.
+// Positions as (x%, y%) of the 320×640 court container — attack end at top, defence at bottom.
+// x=23.4% → 75px centre → 15px left edge (just inside 10px court border with 120px-wide pills)
+// x=76.6% → 245px centre → 305px right edge (just inside 310px court border)
 const NETBALL_COURT_SLOTS: Record<string, { x: number; y: number }> = {
-  GS: { x: 50,   y: 9.8  },
-  GA: { x: 28.6, y: 23.2 },
-  WA: { x: 71.4, y: 37.5 },
-  C:  { x: 50,   y: 50   },
-  WD: { x: 28.6, y: 62.5 },
-  GD: { x: 71.4, y: 76.8 },
-  GK: { x: 50,   y: 90.2 },
+  GS: { x: 50,   y: 15 },
+  GA: { x: 23.4, y: 27 },
+  WA: { x: 76.6, y: 40 },
+  C:  { x: 50,   y: 50 },
+  WD: { x: 23.4, y: 60 },
+  GD: { x: 76.6, y: 73 },
+  GK: { x: 50,   y: 85 },
 };
 
 function hasNetballCourtLayout(abbrs: string[]): boolean {
@@ -280,9 +282,9 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                 </CardHeader>
                 <CardContent className={cn(useCourtLayout ? "flex justify-center pb-6" : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4")}>
                     {useCourtLayout ? (
-                        /* SVG netball court for 7-aside: attack end (GS/GA) at top, defence (GK/GD) at bottom */
-                        <div className="relative rounded-lg overflow-hidden" style={{ width: '280px', height: '560px' }}>
-                            <svg viewBox="0 0 280 560" width="280" height="560" xmlns="http://www.w3.org/2000/svg">
+                        /* SVG netball court for 7-aside — 320×640, attack end at top */
+                        <div className="relative rounded-lg overflow-hidden" style={{ width: '320px', height: '640px' }}>
+                            <svg viewBox="0 0 320 640" width="320" height="640" xmlns="http://www.w3.org/2000/svg">
                                 <defs>
                                     <linearGradient id="ncGrad" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="0%" stopColor="#1a5c30" />
@@ -290,31 +292,31 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                                         <stop offset="100%" stopColor="#1a5c30" />
                                     </linearGradient>
                                 </defs>
-                                {/* Background */}
-                                <rect width="280" height="560" fill="url(#ncGrad)" rx="6" />
+                                <rect width="320" height="640" fill="url(#ncGrad)" rx="6" />
                                 {/* Court outline */}
-                                <rect x="10" y="10" width="260" height="540" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                {/* Third lines: 540/3=180px each, from y=10 */}
-                                <line x1="10" y1="190" x2="270" y2="190" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                <line x1="10" y1="370" x2="270" y2="370" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                {/* Centre circle r=16 (~0.9m) */}
-                                <circle cx="140" cy="280" r="16" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                <circle cx="140" cy="280" r="2" fill="rgba(255,255,255,0.75)" />
-                                {/* Goal D arcs r=87 (~4.9m) */}
-                                <path d="M 53 10 A 87 87 0 0 1 227 10" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                <path d="M 227 550 A 87 87 0 0 0 53 550" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                {/* Goal posts — yellow rectangles */}
-                                <rect x="134" y="5" width="12" height="9" rx="2" fill="#FFC107" />
-                                <rect x="134" y="546" width="12" height="9" rx="2" fill="#FFC107" />
+                                <rect x="10" y="10" width="300" height="620" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                {/* Third lines: 620/3≈207px each */}
+                                <line x1="10" y1="217" x2="310" y2="217" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                <line x1="10" y1="423" x2="310" y2="423" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                {/* Centre circle r=18 (~0.9m scaled) */}
+                                <circle cx="160" cy="320" r="18" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                <circle cx="160" cy="320" r="2" fill="rgba(255,255,255,0.75)" />
+                                {/* Goal D arcs r=99 (~4.9m scaled) */}
+                                <path d="M 61 10 A 99 99 0 0 1 259 10" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                <path d="M 259 630 A 99 99 0 0 0 61 630" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                                {/* Goal posts */}
+                                <rect x="154" y="5" width="12" height="9" rx="2" fill="#FFC107" />
+                                <rect x="154" y="626" width="12" height="9" rx="2" fill="#FFC107" />
                                 {/* End labels */}
-                                <text x="140" y="32" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.4)" letterSpacing="1.5" fontFamily="sans-serif">ATTACK</text>
-                                <text x="140" y="536" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.4)" letterSpacing="1.5" fontFamily="sans-serif">DEFENCE</text>
+                                <text x="160" y="35" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.4)" letterSpacing="1.5" fontFamily="sans-serif">ATTACK</text>
+                                <text x="160" y="618" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.4)" letterSpacing="1.5" fontFamily="sans-serif">DEFENCE</text>
                             </svg>
                             {positions?.map(position => {
                                 const slot = NETBALL_COURT_SLOTS[position.abbreviation];
                                 if (!slot) return null;
                                 const playerId = courtPositions[position.abbreviation];
                                 const player = players?.find(p => p.id === playerId);
+                                const timeInPos = player ? (playerTimeInPosition[player.id]?.[position.abbreviation] || 0) : 0;
                                 return (
                                     <div
                                         key={position.id}
@@ -325,13 +327,13 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                                         onDragOver={allowDrop}
                                         style={{
                                             position: 'absolute',
-                                            left: `calc(${slot.x}% - 32px)`,
-                                            top: `calc(${slot.y}% - 32px)`,
-                                            width: '64px',
-                                            height: '64px',
+                                            left: `calc(${slot.x}% - 60px)`,
+                                            top: `calc(${slot.y}% - 26px)`,
+                                            width: '120px',
+                                            height: '52px',
                                         }}
                                         className={cn(
-                                            "rounded-full border-2 flex flex-col items-center justify-center text-center transition-all duration-150 z-10 select-none",
+                                            "rounded-full border-2 flex flex-col items-center justify-center text-center transition-all duration-150 z-10 select-none px-2",
                                             player
                                                 ? "border-primary bg-primary text-primary-foreground shadow-lg cursor-grab active:cursor-grabbing"
                                                 : isDragging
@@ -341,8 +343,13 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                                     >
                                         {player ? (
                                             <>
-                                                <span className="text-[9px] font-semibold opacity-75 leading-none">{position.abbreviation}</span>
-                                                <span className="text-[11px] font-bold leading-tight px-1 truncate w-full text-center mt-0.5">
+                                                <div className="flex items-center gap-1 leading-none">
+                                                    <span className="text-[9px] font-bold opacity-75">{position.abbreviation}</span>
+                                                    {timeInPos > 0 && (
+                                                        <span className="text-[9px] font-mono opacity-75">· {formatTime(timeInPos)}</span>
+                                                    )}
+                                                </div>
+                                                <span className="text-[12px] font-bold truncate w-full text-center leading-tight mt-0.5">
                                                     {player.name.split(' ')[0]}
                                                 </span>
                                             </>

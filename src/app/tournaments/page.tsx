@@ -4,24 +4,15 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { PlusCircle, Trophy, ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useUser, useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection, query } from "firebase/firestore";
+import { useTournaments } from "@/api/hooks/use-tournaments";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from "next/navigation";
 import { setNavId } from "@/lib/nav";
 
 export default function TournamentsPage() {
-  const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
   const router = useRouter();
 
-  const tournamentsQuery = useMemoFirebase(() => {
-    if (!user) return null;
-    return query(collection(firestore, "users", user.uid, "tournaments"));
-  }, [firestore, user]);
-
-  const { data: tournaments, isLoading } = useCollection(tournamentsQuery);
-  const loading = isUserLoading || isLoading;
+  const { data: tournaments, isLoading } = useTournaments();
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -38,7 +29,7 @@ export default function TournamentsPage() {
         </Button>
       </div>
 
-      {loading && (
+      {isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <Skeleton className="h-40" />
             <Skeleton className="h-40" />
@@ -46,7 +37,7 @@ export default function TournamentsPage() {
         </div>
       )}
 
-      {!loading && tournaments && tournaments.length > 0 && (
+      {!isLoading && tournaments && tournaments.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {tournaments.map((tournament) => (
             <Card key={tournament.id}>
@@ -55,7 +46,7 @@ export default function TournamentsPage() {
                 <CardDescription>{tournament.matchIds?.length || 0} games</CardDescription>
               </CardHeader>
               <CardContent>
-                
+
               </CardContent>
               <CardFooter>
                  <Button variant="outline" className="w-full" onClick={() => { setNavId('tournamentId', tournament.id); router.push('/tournaments/view'); }}>
@@ -67,8 +58,7 @@ export default function TournamentsPage() {
         </div>
       )}
 
-
-      {!loading && (!tournaments || tournaments.length === 0) && (
+      {!isLoading && (!tournaments || tournaments.length === 0) && (
         <Card>
             <CardHeader>
             <CardTitle>Your Tournaments</CardTitle>

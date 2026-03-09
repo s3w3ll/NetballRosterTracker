@@ -4,8 +4,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Users, PlusCircle, ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useUser, useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection, query } from "firebase/firestore";
+import { useRosters } from "@/api/hooks/use-rosters";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
@@ -13,19 +12,10 @@ import { useRouter } from "next/navigation";
 import { setNavId } from "@/lib/nav";
 
 export default function NewGamePage() {
-    const { user, isUserLoading } = useUser();
-    const firestore = useFirestore();
     const router = useRouter();
     const [rosterId, setRosterId] = useState<string | null>(null);
 
-    const rostersQuery = useMemoFirebase(() => {
-        if (!user) return null;
-        return query(collection(firestore, "users", user.uid, "rosters"));
-    }, [firestore, user]);
-
-    const { data: rosters, isLoading: isRostersLoading } = useCollection(rostersQuery);
-
-    const isLoading = isUserLoading || isRostersLoading;
+    const { data: rosters, isLoading } = useRosters();
 
     if (isLoading) {
         return (

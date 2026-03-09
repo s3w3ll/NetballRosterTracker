@@ -256,7 +256,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
           <CardContent className={cn(useCourtLayout ? "flex justify-center pb-4" : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4")}>
             {useCourtLayout ? (
               /* SVG netball court for 7-aside — scales to container, attack end at top */
-              <div className="relative rounded-lg overflow-hidden w-full" style={{ aspectRatio: '1/2' }}>
+              <div className="relative rounded-lg overflow-hidden w-full" style={{ aspectRatio: '2/3' }}>
                 <svg viewBox="0 0 400 800" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
                   <defs>
                     <linearGradient id="ncGrad" x1="0" y1="0" x2="0" y2="1">
@@ -264,6 +264,14 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                       <stop offset="50%" stopColor="#1e6b38" />
                       <stop offset="100%" stopColor="#1a5c30" />
                     </linearGradient>
+                    {/* Clip attack D to the in-court half (y ≥ 10) */}
+                    <clipPath id="ncAttackHalf">
+                      <rect x="0" y="10" width="400" height="260" />
+                    </clipPath>
+                    {/* Clip defence D to the in-court half (y ≤ 790) */}
+                    <clipPath id="ncDefenceHalf">
+                      <rect x="0" y="530" width="400" height="260" />
+                    </clipPath>
                   </defs>
                   <rect width="400" height="800" fill="url(#ncGrad)" rx="6" />
                   {/* Court outline */}
@@ -274,9 +282,9 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                   {/* Centre circle r=22 */}
                   <circle cx="200" cy="400" r="22" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
                   <circle cx="200" cy="400" r="2.5" fill="rgba(255,255,255,0.75)" />
-                  {/* Goal D arcs r=124 */}
-                  <path d="M 76 10 A 124 124 0 0 1 324 10" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                  <path d="M 324 790 A 124 124 0 0 0 76 790" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                  {/* Goal D circles r=124 — clipped to show only the in-court semicircle */}
+                  <circle cx="200" cy="10" r="124" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" clipPath="url(#ncAttackHalf)" />
+                  <circle cx="200" cy="790" r="124" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" clipPath="url(#ncDefenceHalf)" />
                   {/* Goal posts */}
                   <rect x="193" y="5" width="14" height="10" rx="2" fill="#FFC107" />
                   <rect x="193" y="785" width="14" height="10" rx="2" fill="#FFC107" />
@@ -303,8 +311,8 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                         left: `${slot.x}%`,
                         top: `${slot.y}%`,
                         transform: 'translate(-50%, -50%)',
-                        width: '160px',
-                        height: '58px',
+                        width: '190px',
+                        height: '70px',
                       }}
                       className={cn(
                         "rounded-full border-2 flex flex-col items-center justify-center text-center transition-all duration-150 z-10 select-none px-3",

@@ -29,9 +29,9 @@ const iconMap: Record<string, LucideIcon> = {
     Footprints,
 };
 
-// Positions as (x%, y%) of the 320×640 court container — attack end at top, defence at bottom.
-// x=23.4% → 75px centre → 15px left edge (just inside 10px court border with 120px-wide pills)
-// x=76.6% → 245px centre → 305px right edge (just inside 310px court border)
+// Positions as (x%, y%) of the 400×800 court container — attack end at top, defence at bottom.
+// x=23.4% → 93.6px centre → 13.6px left edge (just inside 10px court border with 160px-wide pills)
+// x=76.6% → 306.4px centre → 386.4px right edge (just inside 390px court border)
 const NETBALL_COURT_SLOTS: Record<string, { x: number; y: number }> = {
   GS: { x: 50,   y: 15 },
   GA: { x: 23.4, y: 27 },
@@ -244,21 +244,141 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   );
 
   return (
-    <>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <div className="flex flex-col md:flex-row gap-6 items-start">
+
+      {/* ── Court (left, fixed width) ───────────────────────────── */}
+      <div className="flex-shrink-0">
+        <Card className="bg-primary/5">
+          <CardHeader className="pb-2">
+            <CardTitle>Court</CardTitle>
+            <CardDescription>Drag players onto the court.</CardDescription>
+          </CardHeader>
+          <CardContent className={cn(useCourtLayout ? "flex justify-center pb-4" : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4")}>
+            {useCourtLayout ? (
+              /* SVG netball court for 7-aside — 400×800, attack end at top */
+              <div className="relative rounded-lg overflow-hidden" style={{ width: '400px', height: '800px' }}>
+                <svg viewBox="0 0 400 800" width="400" height="800" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="ncGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#1a5c30" />
+                      <stop offset="50%" stopColor="#1e6b38" />
+                      <stop offset="100%" stopColor="#1a5c30" />
+                    </linearGradient>
+                  </defs>
+                  <rect width="400" height="800" fill="url(#ncGrad)" rx="6" />
+                  {/* Court outline */}
+                  <rect x="10" y="10" width="380" height="780" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                  {/* Third lines: 780/3=260px each */}
+                  <line x1="10" y1="270" x2="390" y2="270" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                  <line x1="10" y1="530" x2="390" y2="530" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                  {/* Centre circle r=22 */}
+                  <circle cx="200" cy="400" r="22" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                  <circle cx="200" cy="400" r="2.5" fill="rgba(255,255,255,0.75)" />
+                  {/* Goal D arcs r=124 */}
+                  <path d="M 76 10 A 124 124 0 0 1 324 10" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                  <path d="M 324 790 A 124 124 0 0 0 76 790" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+                  {/* Goal posts */}
+                  <rect x="193" y="5" width="14" height="10" rx="2" fill="#FFC107" />
+                  <rect x="193" y="785" width="14" height="10" rx="2" fill="#FFC107" />
+                  {/* End labels */}
+                  <text x="200" y="46" textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.4)" letterSpacing="1.5" fontFamily="sans-serif">ATTACK</text>
+                  <text x="200" y="772" textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.4)" letterSpacing="1.5" fontFamily="sans-serif">DEFENCE</text>
+                </svg>
+                {positions?.map(position => {
+                  const slot = NETBALL_COURT_SLOTS[position.abbreviation];
+                  if (!slot) return null;
+                  const playerId = courtPositions[position.abbreviation];
+                  const player = players?.find(p => p.id === playerId);
+                  const timeInPos = player ? (playerTimeInPosition[player.id]?.[position.abbreviation] || 0) : 0;
+                  return (
+                    <div
+                      key={position.id}
+                      draggable={!!player}
+                      onDragStart={player ? (e) => handleDragStart(e, player.id) : undefined}
+                      onDragEnd={handleDragEnd}
+                      onDrop={(e) => handleDrop(e, position.abbreviation)}
+                      onDragOver={allowDrop}
+                      style={{
+                        position: 'absolute',
+                        left: `calc(${slot.x}% - 80px)`,
+                        top: `calc(${slot.y}% - 29px)`,
+                        width: '160px',
+                        height: '58px',
+                      }}
+                      className={cn(
+                        "rounded-full border-2 flex flex-col items-center justify-center text-center transition-all duration-150 z-10 select-none px-3",
+                        player
+                          ? "border-primary bg-primary text-primary-foreground shadow-lg cursor-grab active:cursor-grabbing"
+                          : isDragging
+                            ? "border-yellow-300/70 bg-black/40 border-dashed"
+                            : "border-white/50 bg-black/25 border-dashed"
+                      )}
+                    >
+                      {player ? (
+                        <>
+                          <div className="flex items-center gap-1 leading-none">
+                            <span className="text-[10px] font-bold opacity-75">{position.abbreviation}</span>
+                            {timeInPos > 0 && (
+                              <span className="text-[10px] font-mono opacity-75">· {formatTime(timeInPos)}</span>
+                            )}
+                          </div>
+                          <span className="text-[13px] font-bold truncate w-full text-center leading-tight mt-0.5">
+                            {player.name.split(' ')[0]}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-white/80 text-sm font-bold">{position.abbreviation}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Grid fallback for non-7-aside game formats */
+              <>
+                {positions?.map(position => {
+                  const playerId = courtPositions[position.abbreviation];
+                  const player = players?.find(p => p.id === playerId);
+                  const Icon = iconMap[position.icon] || User;
+                  return (
+                    <div
+                      key={position.id}
+                      onDrop={(e) => handleDrop(e, position.abbreviation)}
+                      onDragOver={allowDrop}
+                      className={cn("p-4 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 min-h-[100px] transition-colors", player ? "border-primary bg-primary/10" : isDragging ? "border-primary/70 bg-primary/5 ring-2 ring-primary/20" : "border-muted-foreground/50 bg-background/30")}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon className="h-5 w-5 text-primary" />
+                        <span className="font-bold text-primary">{position.abbreviation}</span>
+                      </div>
+                      {player ? <PlayerCard player={player}/> : <span className="text-xs text-muted-foreground">Empty</span>}
+                    </div>
+                  )
+                })}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Right column: clock → period → bench ───────────────── */}
+      <div className="flex flex-col gap-4 flex-1 min-w-0">
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Game Clock</CardTitle></CardHeader>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Game Clock</CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="text-4xl font-bold font-mono tracking-tighter">{formatTime(time)}</div>
             <div className="flex items-center gap-2 mt-2">
-                <Button size="sm" variant="outline" onClick={toggleTimer}>
-                    {isActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                    <span className="ml-2">{isActive ? 'Pause' : 'Start'}</span>
-                </Button>
-                <Button size="sm" variant="ghost" onClick={resetTimer}><RefreshCw className="h-4 w-4" /></Button>
+              <Button size="sm" variant="outline" onClick={toggleTimer}>
+                {isActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                <span className="ml-2">{isActive ? 'Pause' : 'Start'}</span>
+              </Button>
+              <Button size="sm" variant="ghost" onClick={resetTimer}><RefreshCw className="h-4 w-4" /></Button>
             </div>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Current Period</CardTitle>
@@ -266,142 +386,25 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">Period {currentPeriod} / {gameFormat?.numberOfPeriods}</div>
-             <Button size="sm" variant="outline" onClick={advancePeriod} disabled={currentPeriod >= (gameFormat?.numberOfPeriods || 4)} className="mt-2">
-                Next Period <ArrowRight className="ml-2 h-4 w-4" />
+            <Button size="sm" variant="outline" onClick={advancePeriod} disabled={currentPeriod >= (gameFormat?.numberOfPeriods || 4)} className="mt-2">
+              Next Period <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card className={cn("flex-1 transition-colors", isDragging && "ring-2 ring-primary/20")} onDrop={handleBenchDrop} onDragOver={allowDrop}>
+          <CardHeader>
+            <CardTitle>Bench ({benchedPlayers.length})</CardTitle>
+            <CardDescription>Drag players from here onto the court.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {benchedPlayers.map(player => <PlayerCard key={player.id} player={player}/>)}
+            {benchedPlayers.length === 0 && <p className="text-sm text-center text-muted-foreground pt-10">No players on the bench</p>}
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
-            <Card className="bg-primary/5">
-                <CardHeader>
-                    <CardTitle>Court</CardTitle>
-                    <CardDescription>Drag players from the bench to a position on the court.</CardDescription>
-                </CardHeader>
-                <CardContent className={cn(useCourtLayout ? "flex justify-center pb-6" : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4")}>
-                    {useCourtLayout ? (
-                        /* SVG netball court for 7-aside — 320×640, attack end at top */
-                        <div className="relative rounded-lg overflow-hidden" style={{ width: '320px', height: '640px' }}>
-                            <svg viewBox="0 0 320 640" width="320" height="640" xmlns="http://www.w3.org/2000/svg">
-                                <defs>
-                                    <linearGradient id="ncGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stopColor="#1a5c30" />
-                                        <stop offset="50%" stopColor="#1e6b38" />
-                                        <stop offset="100%" stopColor="#1a5c30" />
-                                    </linearGradient>
-                                </defs>
-                                <rect width="320" height="640" fill="url(#ncGrad)" rx="6" />
-                                {/* Court outline */}
-                                <rect x="10" y="10" width="300" height="620" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                {/* Third lines: 620/3≈207px each */}
-                                <line x1="10" y1="217" x2="310" y2="217" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                <line x1="10" y1="423" x2="310" y2="423" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                {/* Centre circle r=18 (~0.9m scaled) */}
-                                <circle cx="160" cy="320" r="18" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                <circle cx="160" cy="320" r="2" fill="rgba(255,255,255,0.75)" />
-                                {/* Goal D arcs r=99 (~4.9m scaled) */}
-                                <path d="M 61 10 A 99 99 0 0 1 259 10" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                <path d="M 259 630 A 99 99 0 0 0 61 630" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
-                                {/* Goal posts */}
-                                <rect x="154" y="5" width="12" height="9" rx="2" fill="#FFC107" />
-                                <rect x="154" y="626" width="12" height="9" rx="2" fill="#FFC107" />
-                                {/* End labels */}
-                                <text x="160" y="35" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.4)" letterSpacing="1.5" fontFamily="sans-serif">ATTACK</text>
-                                <text x="160" y="618" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.4)" letterSpacing="1.5" fontFamily="sans-serif">DEFENCE</text>
-                            </svg>
-                            {positions?.map(position => {
-                                const slot = NETBALL_COURT_SLOTS[position.abbreviation];
-                                if (!slot) return null;
-                                const playerId = courtPositions[position.abbreviation];
-                                const player = players?.find(p => p.id === playerId);
-                                const timeInPos = player ? (playerTimeInPosition[player.id]?.[position.abbreviation] || 0) : 0;
-                                return (
-                                    <div
-                                        key={position.id}
-                                        draggable={!!player}
-                                        onDragStart={player ? (e) => handleDragStart(e, player.id) : undefined}
-                                        onDragEnd={handleDragEnd}
-                                        onDrop={(e) => handleDrop(e, position.abbreviation)}
-                                        onDragOver={allowDrop}
-                                        style={{
-                                            position: 'absolute',
-                                            left: `calc(${slot.x}% - 60px)`,
-                                            top: `calc(${slot.y}% - 26px)`,
-                                            width: '120px',
-                                            height: '52px',
-                                        }}
-                                        className={cn(
-                                            "rounded-full border-2 flex flex-col items-center justify-center text-center transition-all duration-150 z-10 select-none px-2",
-                                            player
-                                                ? "border-primary bg-primary text-primary-foreground shadow-lg cursor-grab active:cursor-grabbing"
-                                                : isDragging
-                                                    ? "border-yellow-300/70 bg-black/40 border-dashed"
-                                                    : "border-white/50 bg-black/25 border-dashed"
-                                        )}
-                                    >
-                                        {player ? (
-                                            <>
-                                                <div className="flex items-center gap-1 leading-none">
-                                                    <span className="text-[9px] font-bold opacity-75">{position.abbreviation}</span>
-                                                    {timeInPos > 0 && (
-                                                        <span className="text-[9px] font-mono opacity-75">· {formatTime(timeInPos)}</span>
-                                                    )}
-                                                </div>
-                                                <span className="text-[12px] font-bold truncate w-full text-center leading-tight mt-0.5">
-                                                    {player.name.split(' ')[0]}
-                                                </span>
-                                            </>
-                                        ) : (
-                                            <span className="text-white/80 text-xs font-bold">{position.abbreviation}</span>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        /* Grid fallback for non-7-aside game formats */
-                        <>
-                            {positions?.map(position => {
-                                const playerId = courtPositions[position.abbreviation];
-                                const player = players?.find(p => p.id === playerId);
-                                const Icon = iconMap[position.icon] || User;
-                                return (
-                                    <div
-                                        key={position.id}
-                                        onDrop={(e) => handleDrop(e, position.abbreviation)}
-                                        onDragOver={allowDrop}
-                                        className={cn("p-4 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 min-h-[100px] transition-colors", player ? "border-primary bg-primary/10" : isDragging ? "border-primary/70 bg-primary/5 ring-2 ring-primary/20" : "border-muted-foreground/50 bg-background/30")}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                          <Icon className="h-5 w-5 text-primary" />
-                                          <span className="font-bold text-primary">{position.abbreviation}</span>
-                                        </div>
-                                        {player ? <PlayerCard player={player}/> : <span className="text-xs text-muted-foreground">Empty</span>}
-                                    </div>
-                                )
-                            })}
-                        </>
-                    )}
-                </CardContent>
-            </Card>
-        </div>
-
-        <div className="lg:col-span-1">
-            <Card className={cn("min-h-[400px] transition-colors", isDragging && "ring-2 ring-primary/20")} onDrop={handleBenchDrop} onDragOver={allowDrop}>
-                <CardHeader>
-                    <CardTitle>Bench ({benchedPlayers.length})</CardTitle>
-                    <CardDescription>Drag players from here onto the court.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                    {benchedPlayers.map(player => <PlayerCard key={player.id} player={player}/>)}
-                    {benchedPlayers.length === 0 && <p className="text-sm text-center text-muted-foreground pt-10">No players on the bench</p>}
-                </CardContent>
-            </Card>
-        </div>
-      </div>
-    </>
+    </div>
   )
 }
 
@@ -721,23 +724,26 @@ export default function GamePage() {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold font-headline">{match.name || 'Live Game'}</h1>
-        <p className="text-muted-foreground">Managing your game and strategy.</p>
-      </div>
-
+    <div className="container mx-auto py-4 px-4">
       <Tabs defaultValue={defaultMode} className="w-full">
-        <TabsList className="grid w-full max-w-sm mx-auto grid-cols-2 mb-8">
-          <TabsTrigger value="live">
-            <Gamepad2 className="mr-2 h-4 w-4" />
-            Live Game
+
+        {/* Title row + tab toggle inline */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold font-headline">{match.name || 'Live Game'}</h1>
+            <p className="text-sm text-muted-foreground">Managing your game and strategy.</p>
+          </div>
+          <TabsList className="grid grid-cols-2">
+            <TabsTrigger value="live">
+              <Gamepad2 className="mr-2 h-4 w-4" />
+              Live Game
             </TabsTrigger>
-          <TabsTrigger value="plan">
-            <ClipboardEdit className="mr-2 h-4 w-4" />
-            Match Plan
-          </TabsTrigger>
-        </TabsList>
+            <TabsTrigger value="plan">
+              <ClipboardEdit className="mr-2 h-4 w-4" />
+              Match Plan
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="live">
           <LiveGameTracker match={match} gameFormat={gameFormat} positions={positions} players={players} />
@@ -745,8 +751,8 @@ export default function GamePage() {
         <TabsContent value="plan">
           <MatchPlanner match={match} gameFormat={gameFormat} positions={positions} players={players} matchPlans={matchPlans} />
         </TabsContent>
-      </Tabs>
 
+      </Tabs>
     </div>
   );
 }

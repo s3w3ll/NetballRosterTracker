@@ -219,6 +219,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   };
 
   const useCourtLayout = positions ? hasNetballCourtLayout(positions.map(p => p.abbreviation)) : false;
+  const courtGridCols = positions?.length === 6 ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3';
 
   const benchedPlayers = players?.filter(p => !onCourtPlayerIds.includes(p.id)) || [];
 

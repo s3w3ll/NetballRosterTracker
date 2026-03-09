@@ -5,8 +5,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { doc, writeBatch, collection, arrayUnion } from 'firebase/firestore';
-import { useDoc, useFirestore, useUser, useMemoFirebase, useCollection } from '@/firebase';
+import { useFirebase } from '@/firebase';
+import { useTournament } from '@/api/hooks/use-tournaments';
+import { useRosters } from '@/api/hooks/use-rosters';
+import { useGameFormats } from '@/api/hooks/use-game-formats';
+import { apiJSON } from '@/api/client';
 import { useToast } from '@/hooks/use-toast';
 import { getNavId, setNavId } from '@/lib/nav';
 
@@ -31,36 +34,21 @@ export default function AddMatchToTournamentPage() {
   const router = useRouter();
   const { toast } = useToast();
   const tournamentId = getNavId('tournamentId');
-  const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const { getIdToken } = useFirebase();
 
-  const tournamentRef = useMemoFirebase(() => {
-    if (!user || !tournamentId) return null;
-    return doc(firestore, 'users', user.uid, 'tournaments', tournamentId);
-  }, [firestore, user, tournamentId]);
-  const { data: tournament, isLoading: isTournamentLoading } = useDoc(tournamentRef);
-
-  const rostersQuery = useMemoFirebase(() => {
-    if (!user) return null;
-    return collection(firestore, 'users', user.uid, 'rosters');
-  }, [firestore, user]);
-  const { data: rosters, isLoading: areRostersLoading } = useCollection(rostersQuery);
-
-  const gameFormatsQuery = useMemoFirebase(() => {
-      if (!user) return null;
-      return collection(firestore, 'users', user.uid, 'gameFormats');
-  }, [firestore, user]);
-  const { data: gameFormats, isLoading: areFormatsLoading } = useCollection(gameFormatsQuery);
+  const { data: tournament, isLoading: isTournamentLoading } = useTournament(tournamentId);
+  const { data: rosters, isLoading: areRostersLoading } = useRosters();
+  const { data: gameFormats, isLoading: areFormatsLoading } = useGameFormats();
 
   const form = useForm<PlanSetupFormData>({
     resolver: zodResolver(planSetupSchema),
   });
 
   const onSubmit = async (data: PlanSetupFormData) => {
-    if (!user || !tournament) {
-        toast({ variant: "destructive", title: "Error", description: "Cannot create a match plan without a user and tournament." });
+    if (!tournament) {
+        toast({ variant: "destructive", title: "Error", description: "Cannot create a match plan without a tournament." });
         return;
-    };
+    }
 
     const originalFormat = gameFormats?.find(f => f.id === data.gameFormatId);
     if (!originalFormat) {
@@ -68,45 +56,33 @@ export default function AddMatchToTournamentPage() {
        return;
     }
 
-    const batch = writeBatch(firestore);
-
-    const matchId = uuidv4();
-    const newMatch = {
-        id: matchId,
-        userId: user.uid,
-        name: data.matchName,
-        team1RosterId: data.rosterId,
-        startTime: new Date().toISOString(),
-        gameFormatId: originalFormat.id,
-        tournamentId: tournament.id,
-    };
-
-    const matchDocRef = doc(firestore, `users/${user.uid}/matches`, matchId);
-    batch.set(matchDocRef, newMatch);
-
-    for (let i = 1; i <= originalFormat.numberOfPeriods; i++) {
-        const matchPlanId = uuidv4();
-        const newMatchPlan = {
-            id: matchPlanId,
-            matchId: matchId,
-            quarter: i,
-            playerPositions: [],
-        };
-        const planDocRef = doc(firestore, `users/${user.uid}/matches/${matchId}/matchPlans`, matchPlanId);
-        batch.set(planDocRef, newMatchPlan);
-    }
-
-    const tournamentDocRef = doc(firestore, `users/${user.uid}/tournaments`, tournament.id);
-    batch.update(tournamentDocRef, {
-        matchIds: arrayUnion(matchId)
-    });
-
     try {
-      await batch.commit();
-      toast({
-          title: "Match Added to Tournament!",
-          description: "Create the match plan for this game now.",
+      const matchId = uuidv4();
+
+      await apiJSON('/api/matches', getIdToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          id: matchId,
+          name: data.matchName,
+          team1RosterId: data.rosterId,
+          startTime: new Date().toISOString(),
+          gameFormatId: originalFormat.id,
+        }),
       });
+
+      for (let i = 1; i <= originalFormat.numberOfPeriods; i++) {
+        await apiJSON(`/api/matches/${matchId}/plans`, getIdToken, {
+          method: 'POST',
+          body: JSON.stringify({ id: uuidv4(), quarter: i, playerPositions: [] }),
+        });
+      }
+
+      await apiJSON(`/api/tournaments/${tournament.id}/matches`, getIdToken, {
+        method: 'POST',
+        body: JSON.stringify({ matchId }),
+      });
+
+      toast({ title: "Match Added to Tournament!", description: "Create the match plan for this game now." });
       setNavId('gameId', matchId);
       router.push('/games/play?mode=plan');
     } catch (error: any) {
@@ -118,7 +94,7 @@ export default function AddMatchToTournamentPage() {
     }
   };
 
-  const isLoading = isUserLoading || isTournamentLoading || areFormatsLoading || areRostersLoading;
+  const isLoading = isTournamentLoading || areFormatsLoading || areRostersLoading;
 
   if (isLoading) {
     return (

@@ -1,19 +1,22 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useDoc, useCollection, useFirestore, useUser, useMemoFirebase } from '@/firebase';
-import { doc, collection } from 'firebase/firestore';
+import { useFirebase } from '@/firebase';
+import { useMatch } from '@/api/hooks/use-matches';
+import { useGameFormat } from '@/api/hooks/use-game-formats';
+import { useRoster } from '@/api/hooks/use-rosters';
+import { useMatchPlans } from '@/api/hooks/use-match-plans';
+import { upsertMatchPlanNonBlocking } from '@/firebase/non-blocking-updates';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Timer, Users, User, Shield, Target, Circle, Feather, Footprints, Play, Pause, RefreshCw, ArrowRight, ClipboardEdit, Gamepad2, Info } from 'lucide-react';
+import { Timer, Users, User, Shield, Target, Circle, Feather, Footprints, Play, Pause, RefreshCw, ArrowRight, ClipboardEdit, Gamepad2 } from 'lucide-react';
 import { useState, useEffect, useMemo, DragEvent, useRef, useCallback } from 'react';
 import { type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getNavId } from '@/lib/nav';
@@ -422,8 +425,7 @@ type PlayerPositionsPlan = Record<number, Record<string, string | null>>;
 
 function MatchPlanner({ match, gameFormat, positions, players, matchPlans }: { match: any, gameFormat: any, positions: any[], players: any[], matchPlans: any[] }) {
     const { toast } = useToast();
-    const { user } = useUser();
-    const firestore = useFirestore();
+    const { getIdToken } = useFirebase();
     const [plan, setPlan] = useState<PlayerPositionsPlan>({});
     const [isDragging, setIsDragging] = useState(false);
     const lastUpdatedPeriod = useRef<number | null>(null);
@@ -457,7 +459,7 @@ function MatchPlanner({ match, gameFormat, positions, players, matchPlans }: { m
         const period = lastUpdatedPeriod.current;
         const periodPlan = plan[period];
 
-        if (!user || !match || !periodPlan) return;
+        if (!match || !periodPlan) return;
 
         const matchPlanDoc = matchPlans.find(mp => mp.quarter === period);
 
@@ -471,15 +473,13 @@ function MatchPlanner({ match, gameFormat, positions, players, matchPlans }: { m
             .filter(([, playerId]) => playerId !== null)
             .map(([position, playerId]) => ({ position, playerId }));
 
-        const planRef = doc(firestore, `users/${user.uid}/matches/${match.id}/matchPlans`, matchPlanDoc.id);
-
-        updateDocumentNonBlocking(planRef, { playerPositions: playerPositionsForFirestore });
+        upsertMatchPlanNonBlocking(match.id, { id: matchPlanDoc.id, quarter: period, playerPositions: playerPositionsForFirestore }, getIdToken);
 
         toast({ title: `Period ${period} plan updated.`});
 
         lastUpdatedPeriod.current = null;
 
-    }, [plan, user, match, matchPlans, firestore, toast]);
+    }, [plan, match, matchPlans, getIdToken, toast]);
 
 
     const handleDrop = (e: DragEvent<HTMLDivElement>, period: number, positionAbbr: string) => {
@@ -657,40 +657,15 @@ export default function GamePage() {
   const gameId = getNavId('gameId');
   const defaultMode = searchParams.get('mode') || 'live';
 
-  const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const { data: match, isLoading: isMatchLoading } = useMatch(gameId);
+  const { data: gameFormat, isLoading: isGameFormatLoading } = useGameFormat(match?.gameFormatId);
+  const { data: roster, isLoading: isRosterLoading } = useRoster(match?.team1RosterId);
+  const { data: matchPlans, isLoading: areMatchPlansLoading } = useMatchPlans(gameId);
 
-  const matchRef = useMemoFirebase(() => {
-    if (!user || !gameId) return null;
-    return doc(firestore, 'users', user.uid, 'matches', gameId);
-  }, [firestore, user, gameId]);
-  const { data: match, isLoading: isMatchLoading } = useDoc(matchRef);
+  const positions = gameFormat?.positions ?? [];
+  const players = roster?.players ?? [];
 
-  const gameFormatRef = useMemoFirebase(() => {
-    if (!user || !match?.gameFormatId) return null;
-    return doc(firestore, 'users', user.uid, 'gameFormats', match.gameFormatId);
-  }, [firestore, user, match]);
-  const { data: gameFormat, isLoading: isGameFormatLoading } = useDoc(gameFormatRef);
-
-  const positionsQuery = useMemoFirebase(() => {
-    if (!user || !gameFormat?.id) return null;
-    return collection(firestore, 'users', user.uid, 'gameFormats', gameFormat.id, 'positions');
-  }, [firestore, user, gameFormat]);
-  const { data: positions, isLoading: arePositionsLoading } = useCollection(positionsQuery);
-
-  const playersQuery = useMemoFirebase(() => {
-    if (!user || !match?.team1RosterId) return null;
-    return collection(firestore, 'users', user.uid, 'rosters', match.team1RosterId, 'players');
-  }, [firestore, user, match]);
-  const { data: players, isLoading: arePlayersLoading } = useCollection(playersQuery);
-
-  const matchPlansQuery = useMemoFirebase(() => {
-    if (!user || !gameId) return null;
-    return collection(firestore, 'users', user.uid, 'matches', gameId, 'matchPlans');
-  }, [firestore, user, gameId]);
-  const { data: matchPlans, isLoading: areMatchPlansLoading } = useCollection(matchPlansQuery);
-
-  const isLoading = isUserLoading || isMatchLoading || arePlayersLoading || isGameFormatLoading || arePositionsLoading || areMatchPlansLoading;
+  const isLoading = isMatchLoading || isGameFormatLoading || isRosterLoading || areMatchPlansLoading;
 
   if (isLoading) {
     return (
@@ -721,7 +696,7 @@ export default function GamePage() {
     );
   }
 
-  if (!match || !gameFormat || !positions || !players || !matchPlans) {
+  if (!match || !gameFormat || !matchPlans) {
     return (
       <div className="container mx-auto py-8 px-4 max-w-xl">
         <Alert variant="destructive">

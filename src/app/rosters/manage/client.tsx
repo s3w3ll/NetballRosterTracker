@@ -1,10 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
 import Link from 'next/link';
-import { doc, collection } from 'firebase/firestore';
-import { useDoc, useCollection, useFirestore, useUser, useMemoFirebase } from '@/firebase';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
+import { useFirebase } from '@/firebase';
+import { useRoster } from '@/api/hooks/use-rosters';
+import { apiJSON } from '@/api/client';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PlusCircle, Trash2, User as UserIcon } from 'lucide-react';
@@ -13,7 +13,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
-import { addDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { v4 as uuidv4 } from 'uuid';
 import { useToast } from "@/hooks/use-toast";
 import { getNavId } from '@/lib/nav';
@@ -24,65 +23,40 @@ const rosterDetailsSchema = z.object({
 
 export default function RosterManagePage() {
   const rosterId = getNavId('rosterId');
-  const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const { getIdToken } = useFirebase();
   const { toast } = useToast();
-
-  const rosterRef = useMemoFirebase(() => {
-    if (!user || !rosterId) return null;
-    return doc(firestore, 'users', user.uid, 'rosters', rosterId);
-  }, [firestore, user, rosterId]);
-
-  const { data: roster, isLoading: isRosterLoading } = useDoc(rosterRef);
-
-  const playersQuery = useMemoFirebase(() => {
-    if (!user || !rosterId) return null;
-    return collection(firestore, 'users', user.uid, 'rosters', rosterId, 'players');
-  }, [firestore, user, rosterId]);
-
-  const { data: players, isLoading: arePlayersLoading } = useCollection(playersQuery);
+  const { data: roster, isLoading, refetch } = useRoster(rosterId);
 
   const form = useForm({
     resolver: zodResolver(rosterDetailsSchema),
-    defaultValues: {
-      newPlayerName: "",
-    },
+    defaultValues: { newPlayerName: "" },
   });
 
   const handleAddPlayer = async (data: z.infer<typeof rosterDetailsSchema>) => {
-    if (!user || !rosterId || !data.newPlayerName) return;
-
-    const newPlayerId = uuidv4();
-    const newPlayer = {
-        id: newPlayerId,
-        name: data.newPlayerName,
-        position: 'Unknown',
-        rosterId: rosterId
-    };
-
-    addDocumentNonBlocking(collection(firestore, 'users', user.uid, 'rosters', rosterId, 'players'), newPlayer);
-
-    toast({
-        title: "Player Added",
-        description: `${data.newPlayerName} has been added to the roster.`
-    });
-
-    form.reset();
+    if (!rosterId || !data.newPlayerName) return;
+    try {
+      await apiJSON(`/api/rosters/${rosterId}/players`, getIdToken, {
+        method: 'POST',
+        body: JSON.stringify({ id: uuidv4(), name: data.newPlayerName, position: 'Unknown' }),
+      });
+      toast({ title: "Player Added", description: `${data.newPlayerName} has been added to the roster.` });
+      form.reset();
+      refetch();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e.message || "Could not add player." });
+    }
   };
 
-  const handleDeletePlayer = (playerId: string, playerName: string) => {
-    if (!user || !rosterId) return;
-
-    const playerRef = doc(firestore, 'users', user.uid, 'rosters', rosterId, 'players', playerId);
-    deleteDocumentNonBlocking(playerRef);
-
-    toast({
-        title: "Player Removed",
-        description: `${playerName} has been removed from the roster.`
-    });
+  const handleDeletePlayer = async (playerId: string, playerName: string) => {
+    if (!rosterId) return;
+    try {
+      await apiJSON(`/api/players/${playerId}`, getIdToken, { method: 'DELETE' });
+      toast({ title: "Player Removed", description: `${playerName} has been removed from the roster.` });
+      refetch();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e.message || "Could not remove player." });
+    }
   };
-
-  const isLoading = isUserLoading || isRosterLoading || arePlayersLoading;
 
   if (isLoading) {
     return (
@@ -153,11 +127,11 @@ export default function RosterManagePage() {
         </div>
         <Card>
           <CardHeader>
-            <CardTitle>Players ({players?.length || 0})</CardTitle>
+            <CardTitle>Players ({roster.players?.length ?? 0})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-                {players && players.map((player) => (
+                {(roster.players ?? []).map((player) => (
                     <div key={player.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50">
                         <div className='flex items-center gap-3'>
                             <UserIcon className="h-5 w-5 text-muted-foreground" />
@@ -168,7 +142,7 @@ export default function RosterManagePage() {
                         </Button>
                     </div>
                 ))}
-                {players?.length === 0 && <p className="text-muted-foreground text-center py-4">No players in this roster yet.</p>}
+                {(roster.players?.length ?? 0) === 0 && <p className="text-muted-foreground text-center py-4">No players in this roster yet.</p>}
             </div>
           </CardContent>
           <CardFooter className='bg-muted/50 p-4 rounded-b-lg border-t'>

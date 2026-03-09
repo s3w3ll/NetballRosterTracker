@@ -8,10 +8,11 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useFirebase } from '@/firebase';
-import { doc, setDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
 import { v4 as uuidv4 } from 'uuid';
+import { apiJSON } from '@/api/client';
+import { setNavId } from '@/lib/nav';
 
 const tournamentSchema = z.object({
   name: z.string().min(1, "Tournament name is required."),
@@ -20,7 +21,7 @@ const tournamentSchema = z.object({
 type TournamentFormData = z.infer<typeof tournamentSchema>;
 
 export default function NewTournamentPage() {
-  const { auth, firestore } = useFirebase();
+  const { getIdToken } = useFirebase();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -32,32 +33,20 @@ export default function NewTournamentPage() {
   });
 
   const onSubmit = async (data: TournamentFormData) => {
-    if (!auth.currentUser) {
-      toast({
-        variant: "destructive",
-        title: "Authentication Error",
-        description: "You must be logged in to create a tournament.",
-      });
-      return;
-    }
-
-    const tournamentId = uuidv4();
-    const newTournament = {
-        id: tournamentId,
-        userId: auth.currentUser.uid,
-        name: data.name,
-        matchIds: [],
-    }
-
     try {
-        const tournamentRef = doc(firestore, `users/${auth.currentUser.uid}/tournaments`, tournamentId);
-        await setDoc(tournamentRef, newTournament);
+      const tournamentId = uuidv4();
+
+      await apiJSON('/api/tournaments', getIdToken, {
+        method: 'POST',
+        body: JSON.stringify({ id: tournamentId, name: data.name }),
+      });
 
       toast({
         title: "Tournament Created",
         description: `The "${data.name}" tournament has been created.`,
       });
-      router.push(`/tournaments/${tournamentId}/add-match`);
+      setNavId('tournamentId', tournamentId);
+      router.push('/tournaments/add-match');
     } catch (e: any) {
       console.error("Error creating tournament:", e);
       toast({

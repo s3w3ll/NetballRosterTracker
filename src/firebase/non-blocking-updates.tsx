@@ -1,90 +1,42 @@
-'use client';
-    
-import {
-  setDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  CollectionReference,
-  DocumentReference,
-  SetOptions,
-  doc,
-} from 'firebase/firestore';
-import { errorEmitter } from '@/firebase/error-emitter';
-import {FirestorePermissionError} from '@/firebase/errors';
+'use client'
+
+import { apiFetch } from '@/api/client'
+
+type GetIdToken = () => Promise<string>
 
 /**
- * Initiates a setDoc operation for a document reference.
- * Does NOT await the write operation internally.
+ * Adds a player to a roster. Does NOT await the result.
  */
-export function setDocumentNonBlocking(docRef: DocumentReference, data: any, options: SetOptions) {
-  setDoc(docRef, data, options).catch(error => {
-    errorEmitter.emit(
-      'permission-error',
-      new FirestorePermissionError({
-        path: docRef.path,
-        operation: 'write', // or 'create'/'update' based on options
-        requestResourceData: data,
-      })
-    )
-  })
-  // Execution continues immediately
+export function addPlayerNonBlocking(
+  rosterId: string,
+  player: { id: string; name: string; position?: string },
+  getIdToken: GetIdToken
+) {
+  apiFetch(`/api/rosters/${rosterId}/players`, getIdToken, {
+    method: 'POST',
+    body: JSON.stringify(player),
+  }).catch((err) => console.error('addPlayerNonBlocking failed', err))
 }
 
-
 /**
- * Initiates an addDoc operation for a collection reference.
- * Does NOT await the write operation internally.
- * Returns the Promise for the new doc ref, but typically not awaited by caller.
+ * Deletes a player by ID. Does NOT await the result.
  */
-export function addDocumentNonBlocking(colRef: CollectionReference, data: any) {
-  const promise = addDoc(colRef, data)
-    .catch(error => {
-      errorEmitter.emit(
-        'permission-error',
-        new FirestorePermissionError({
-          path: colRef.path,
-          operation: 'create',
-          requestResourceData: data,
-        })
-      )
-    });
-  return promise;
+export function deletePlayerNonBlocking(playerId: string, getIdToken: GetIdToken) {
+  apiFetch(`/api/players/${playerId}`, getIdToken, {
+    method: 'DELETE',
+  }).catch((err) => console.error('deletePlayerNonBlocking failed', err))
 }
 
-
 /**
- * Initiates an updateDoc operation for a document reference.
- * Does NOT await the write operation internally.
+ * Upserts a match plan (quarter assignment). Does NOT await the result.
  */
-export function updateDocumentNonBlocking(docRef: DocumentReference, data: any) {
-  updateDoc(docRef, data)
-    .catch(error => {
-      errorEmitter.emit(
-        'permission-error',
-        new FirestorePermissionError({
-          path: docRef.path,
-          operation: 'update',
-          requestResourceData: data,
-        })
-      )
-    });
-}
-
-
-/**
- * Initiates a deleteDoc operation for a document reference.
- * Does NOT await the write operation internally.
- */
-export function deleteDocumentNonBlocking(docRef: DocumentReference) {
-  deleteDoc(docRef)
-    .catch(error => {
-      errorEmitter.emit(
-        'permission-error',
-        new FirestorePermissionError({
-          path: docRef.path,
-          operation: 'delete',
-        })
-      )
-    });
+export function upsertMatchPlanNonBlocking(
+  matchId: string,
+  plan: { id: string; quarter: number; playerPositions: Array<{ position: string; playerId: string }> },
+  getIdToken: GetIdToken
+) {
+  apiFetch(`/api/matches/${matchId}/plans`, getIdToken, {
+    method: 'POST',
+    body: JSON.stringify(plan),
+  }).catch((err) => console.error('upsertMatchPlanNonBlocking failed', err))
 }

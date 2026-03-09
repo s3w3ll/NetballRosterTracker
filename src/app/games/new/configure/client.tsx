@@ -6,8 +6,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { doc, collection, writeBatch, getDocs } from 'firebase/firestore';
-import { useDoc, useFirestore, useUser, useMemoFirebase, useCollection } from '@/firebase';
+import { useFirebase } from '@/firebase';
+import { useRoster } from '@/api/hooks/use-rosters';
+import { useGameFormats } from '@/api/hooks/use-game-formats';
+import { apiJSON } from '@/api/client';
 import { useToast } from '@/hooks/use-toast';
 import { getNavId, setNavId } from '@/lib/nav';
 
@@ -28,56 +30,47 @@ const gameSetupSchema = z.object({
 
 type GameSetupFormData = z.infer<typeof gameSetupSchema>;
 
-// Function to create default game formats
-const createDefaultFormats = async (firestore: any, userId: string) => {
-    const batch = writeBatch(firestore);
+const DEFAULT_FORMATS = [
+  {
+    id: '7-a-side-default',
+    name: 'Standard 7-a-side',
+    teamSize: 7,
+    numberOfPeriods: 4,
+    periodDuration: 15,
+    positions: [
+      { id: uuidv4(), name: 'Goal Shooter', abbreviation: 'GS', icon: 'Target' },
+      { id: uuidv4(), name: 'Goal Attack', abbreviation: 'GA', icon: 'Target' },
+      { id: uuidv4(), name: 'Wing Attack', abbreviation: 'WA', icon: 'Feather' },
+      { id: uuidv4(), name: 'Centre', abbreviation: 'C', icon: 'Circle' },
+      { id: uuidv4(), name: 'Wing Defence', abbreviation: 'WD', icon: 'Feather' },
+      { id: uuidv4(), name: 'Goal Defence', abbreviation: 'GD', icon: 'Shield' },
+      { id: uuidv4(), name: 'Goal Keeper', abbreviation: 'GK', icon: 'User' },
+    ],
+  },
+  {
+    id: '6-a-side-default',
+    name: 'Fast 6-a-side',
+    teamSize: 6,
+    numberOfPeriods: 4,
+    periodDuration: 8,
+    positions: [
+      { id: uuidv4(), name: 'Attack 1', abbreviation: 'A1', icon: 'Target' },
+      { id: uuidv4(), name: 'Attack 2', abbreviation: 'A2', icon: 'Target' },
+      { id: uuidv4(), name: 'Center 1', abbreviation: 'C1', icon: 'Circle' },
+      { id: uuidv4(), name: 'Center 2', abbreviation: 'C2', icon: 'Circle' },
+      { id: uuidv4(), name: 'Defence 1', abbreviation: 'D1', icon: 'Shield' },
+      { id: uuidv4(), name: 'Defence 2', abbreviation: 'D2', icon: 'Shield' },
+    ],
+  },
+];
 
-    const formats = [
-        {
-            id: '7-a-side-default',
-            name: 'Standard 7-a-side',
-            teamSize: 7,
-            numberOfPeriods: 4,
-            periodDuration: 15,
-            positions: [
-                { id: uuidv4(), name: 'Goal Shooter', abbreviation: 'GS', icon: 'Target' },
-                { id: uuidv4(), name: 'Goal Attack', abbreviation: 'GA', icon: 'Target' },
-                { id: uuidv4(), name: 'Wing Attack', abbreviation: 'WA', icon: 'Feather' },
-                { id: uuidv4(), name: 'Centre', abbreviation: 'C', icon: 'Circle' },
-                { id: uuidv4(), name: 'Wing Defence', abbreviation: 'WD', icon: 'Feather' },
-                { id: uuidv4(), name: 'Goal Defence', abbreviation: 'GD', icon: 'Shield' },
-                { id: uuidv4(), name: 'Goal Keeper', abbreviation: 'GK', icon: 'User' },
-            ]
-        },
-        {
-            id: '6-a-side-default',
-            name: 'Fast 6-a-side',
-            teamSize: 6,
-            numberOfPeriods: 4,
-            periodDuration: 8,
-            positions: [
-                { id: uuidv4(), name: 'Attack 1', abbreviation: 'A1', icon: 'Target' },
-                { id: uuidv4(), name: 'Attack 2', abbreviation: 'A2', icon: 'Target' },
-                { id: uuidv4(), name: 'Center 1', abbreviation: 'C1', icon: 'Circle' },
-                { id: uuidv4(), name: 'Center 2', abbreviation: 'C2', icon: 'Circle' },
-                { id: uuidv4(), name: 'Defence 1', abbreviation: 'D1', icon: 'Shield' },
-                { id: uuidv4(), name: 'Defence 2', abbreviation: 'D2', icon: 'Shield' },
-            ]
-        }
-    ];
-
-    for (const format of formats) {
-        const formatRef = doc(firestore, `users/${userId}/gameFormats`, format.id);
-        const { positions, ...formatData } = format;
-        batch.set(formatRef, { ...formatData, userId, id: format.id });
-
-        for (const position of positions) {
-            const positionRef = doc(firestore, `users/${userId}/gameFormats/${format.id}/positions`, position.id);
-            batch.set(positionRef, { ...position, gameFormatId: format.id, id: position.id });
-        }
-    }
-
-    await batch.commit();
+const createDefaultFormats = async (getIdToken: () => Promise<string>) => {
+  for (const format of DEFAULT_FORMATS) {
+    await apiJSON('/api/game-formats', getIdToken, {
+      method: 'POST',
+      body: JSON.stringify(format),
+    });
+  }
 };
 
 
@@ -85,32 +78,22 @@ export default function GameSetupPage() {
   const router = useRouter();
   const { toast } = useToast();
   const rosterId = getNavId('rosterId');
-  const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const { getIdToken } = useFirebase();
 
-  const rosterRef = useMemoFirebase(() => {
-    if (!user || !rosterId) return null;
-    return doc(firestore, 'users', user.uid, 'rosters', rosterId);
-  }, [firestore, user, rosterId]);
-  const { data: roster, isLoading: isRosterLoading } = useDoc(rosterRef);
-
-  const gameFormatsQuery = useMemoFirebase(() => {
-      if (!user) return null;
-      return collection(firestore, 'users', user.uid, 'gameFormats');
-  }, [firestore, user]);
-  const { data: gameFormats, isLoading: areFormatsLoading } = useCollection(gameFormatsQuery);
+  const { data: roster, isLoading: isRosterLoading } = useRoster(rosterId);
+  const { data: gameFormats, isLoading: areFormatsLoading, refetch: refetchFormats } = useGameFormats();
 
   const [hasCreatedDefaults, setHasCreatedDefaults] = useState(false);
 
   useEffect(() => {
-    if (firestore && user && !areFormatsLoading && gameFormats?.length === 0 && !hasCreatedDefaults) {
-      createDefaultFormats(firestore, user.uid)
-        .then(() => setHasCreatedDefaults(true))
+    if (!areFormatsLoading && gameFormats?.length === 0 && !hasCreatedDefaults) {
+      createDefaultFormats(getIdToken)
+        .then(() => { setHasCreatedDefaults(true); refetchFormats(); })
         .catch((err) => {
           toast({ variant: 'destructive', title: 'Setup Error', description: err?.message || 'Could not create default game formats.' });
         });
     }
-  }, [firestore, user, areFormatsLoading, gameFormats, hasCreatedDefaults, toast]);
+  }, [areFormatsLoading, gameFormats, hasCreatedDefaults, getIdToken, refetchFormats, toast]);
 
   const form = useForm<GameSetupFormData>({
     resolver: zodResolver(gameSetupSchema),
@@ -132,10 +115,10 @@ export default function GameSetupPage() {
 
 
   const onSubmit = async (data: GameSetupFormData) => {
-    if (!user || !roster) {
-        toast({ variant: "destructive", title: "Error", description: "Cannot create a match without a user and roster." });
+    if (!roster) {
+        toast({ variant: "destructive", title: "Error", description: "Cannot create a match without a roster." });
         return;
-    };
+    }
 
     const originalFormat = gameFormats?.find(f => f.id === data.gameFormatId);
     if (!originalFormat) {
@@ -143,49 +126,39 @@ export default function GameSetupPage() {
        return;
     }
 
-    const tempGameFormatId = uuidv4();
-    const tempGameFormat = {
-      ...originalFormat,
-      id: tempGameFormatId,
-      name: `${originalFormat.name} (Custom)`,
-      numberOfPeriods: data.numberOfPeriods,
-      periodDuration: data.periodDuration,
-      isTemporary: true,
-    };
-
-    const batch = writeBatch(firestore);
-    const tempFormatRef = doc(firestore, `users/${user.uid}/gameFormats`, tempGameFormatId);
-    batch.set(tempFormatRef, tempGameFormat);
-
-    // Fetch and copy positions
-    const positionsQuery = collection(firestore, `users/${user.uid}/gameFormats/${originalFormat.id}/positions`);
-    const positionsSnapshot = await getDocs(positionsQuery);
-    positionsSnapshot.forEach(positionDoc => {
-        const positionData = positionDoc.data();
-        const newPositionRef = doc(firestore, `users/${user.uid}/gameFormats/${tempGameFormatId}/positions`, positionDoc.id);
-        batch.set(newPositionRef, { ...positionData, gameFormatId: tempGameFormatId });
-    });
-
-    const matchId = uuidv4();
-    const newMatch = {
-        id: matchId,
-        userId: user.uid,
-        team1RosterId: roster.id,
-        team2RosterId: null,
-        startTime: new Date().toISOString(),
-        endTime: null,
-        gameFormatId: tempGameFormatId,
-    };
-
-    const matchDocRef = doc(firestore, `users/${user.uid}/matches`, matchId);
-    batch.set(matchDocRef, newMatch);
-
     try {
-      await batch.commit();
-      toast({
-          title: "Match Created!",
-          description: "Your new match has been set up.",
+      // Fetch positions from the original format
+      const fullFormat = await apiJSON<any>(`/api/game-formats/${originalFormat.id}`, getIdToken);
+      const copiedPositions = (fullFormat.positions ?? []).map((p: any) => ({
+        id: uuidv4(), name: p.name, abbreviation: p.abbreviation, icon: p.icon,
+      }));
+
+      const tempGameFormatId = uuidv4();
+      await apiJSON('/api/game-formats', getIdToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          id: tempGameFormatId,
+          name: `${originalFormat.name} (Custom)`,
+          teamSize: originalFormat.teamSize,
+          numberOfPeriods: data.numberOfPeriods,
+          periodDuration: data.periodDuration,
+          isTemporary: true,
+          positions: copiedPositions,
+        }),
       });
+
+      const matchId = uuidv4();
+      await apiJSON('/api/matches', getIdToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          id: matchId,
+          team1RosterId: roster.id,
+          startTime: new Date().toISOString(),
+          gameFormatId: tempGameFormatId,
+        }),
+      });
+
+      toast({ title: "Match Created!", description: "Your new match has been set up." });
       setNavId('gameId', matchId);
       router.push('/games/play');
     } catch (error: any) {
@@ -197,7 +170,7 @@ export default function GameSetupPage() {
     }
   };
 
-  const isLoading = isUserLoading || isRosterLoading || areFormatsLoading;
+  const isLoading = isRosterLoading || areFormatsLoading;
 
   if (isLoading) {
     return (

@@ -1,15 +1,20 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useDoc, useCollection, useFirestore, useUser, useMemoFirebase } from '@/firebase';
-import { doc, collection, query, where, documentId } from 'firebase/firestore';
+import { useFirebase } from '@/firebase';
+import { useMatches } from '@/api/hooks/use-matches';
+import { useTournament } from '@/api/hooks/use-tournaments';
+import { useRoster } from '@/api/hooks/use-rosters';
+import { useGameFormats, useGameFormat } from '@/api/hooks/use-game-formats';
+import { apiJSON } from '@/api/client';
+import { normalizeMatchPlan } from '@/api/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Trophy, PlusCircle, BarChart2 } from 'lucide-react';
+import { PlusCircle, BarChart2 } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { getNavId, setNavId } from '@/lib/nav';
 import {
   Table,
@@ -52,74 +57,62 @@ function calculateMatchTimes(match: any, gameFormat: any, matchPlans: any[], pla
 
 export default function TournamentViewPage() {
     const router = useRouter();
+    const { getIdToken } = useFirebase();
     const tournamentId = getNavId('tournamentId');
-    const { user, isUserLoading } = useUser();
-    const firestore = useFirestore();
 
-    const tournamentRef = useMemoFirebase(() => {
-        if (!user || !tournamentId) return null;
-        return doc(firestore, 'users', user.uid, 'tournaments', tournamentId);
-    }, [firestore, user, tournamentId]);
-    const { data: tournament, isLoading: isTournamentLoading } = useDoc(tournamentRef);
+    const { data: tournament, isLoading: isTournamentLoading } = useTournament(tournamentId);
+    const { data: allMatches, isLoading: areMatchesLoading } = useMatches();
 
-    const matchesQuery = useMemoFirebase(() => {
-        if (!user || !tournament?.matchIds || tournament.matchIds.length === 0) return null;
-        return query(collection(firestore, 'users', user.uid, 'matches'), where(documentId(), 'in', tournament.matchIds));
-    }, [firestore, user, tournament]);
-    const { data: matches, isLoading: areMatchesLoading } = useCollection(matchesQuery);
+    const matches = useMemo(() =>
+        allMatches && tournament?.matchIds
+            ? allMatches.filter(m => tournament.matchIds.includes(m.id))
+            : [],
+        [allMatches, tournament]
+    );
 
-    const rosterIds = useMemo(() => matches ? [...new Set(matches.map((m: any) => m.team1RosterId))] : [], [matches]);
+    const rosterIds = useMemo(() =>
+        [...new Set(matches.map(m => m.team1RosterId).filter(Boolean))] as string[],
+        [matches]
+    );
+    const gameFormatIds = useMemo(() =>
+        [...new Set(matches.map(m => m.gameFormatId).filter(Boolean))] as string[],
+        [matches]
+    );
 
-    const playersQuery = useMemoFirebase(() => {
-        if (!user || rosterIds.length === 0) return null;
-        return collection(firestore, `users/${user.uid}/rosters/${rosterIds[0]}/players`);
-    }, [firestore, user, rosterIds]);
-    const { data: players, isLoading: arePlayersLoading } = useCollection(playersQuery);
+    const { data: roster, isLoading: isRosterLoading } = useRoster(rosterIds[0] ?? null);
+    const { data: primaryGameFormat, isLoading: isFormatLoading } = useGameFormat(gameFormatIds[0] ?? null);
+    const { data: allGameFormats, isLoading: areAllFormatsLoading } = useGameFormats();
 
-    const matchPlanQuery = useMemoFirebase(() => {
-        if (!user || !matches) return null;
-        const matchIds = matches.map((m: any) => m.id);
-        if (matchIds.length === 0) return null;
-        return query(collection(firestore, `users/${user.uid}/matches`));
-    }, [firestore, user, matches]);
+    const players = roster?.players ?? [];
+    const positions = primaryGameFormat?.positions ?? [];
 
-    const { data: allMatchesWithPlans, isLoading: arePlansLoading } = useCollection(matchPlanQuery);
+    const gameFormats = useMemo(() =>
+        allGameFormats?.filter(f => gameFormatIds.includes(f.id)) ?? [],
+        [allGameFormats, gameFormatIds]
+    );
 
-    const allMatchPlans = useMemo(() => {
-        if (!allMatchesWithPlans || !matches) return [];
-        const matchIds = matches.map((m: any) => m.id);
-        let plans: any[] = [];
-        allMatchesWithPlans.forEach((m: any) => {
-            if (m.matchPlans && matchIds.includes(m.id)) {
-                plans = [...plans, ...m.matchPlans];
-            }
-        });
-        return plans;
-    }, [allMatchesWithPlans, matches]);
+    const [allMatchPlans, setAllMatchPlans] = useState<any[]>([]);
+    const [arePlansLoading, setArePlansLoading] = useState(false);
 
-    const gameFormatIds = useMemo(() => matches ? [...new Set(matches.map((m: any) => m.gameFormatId))] : [], [matches]);
-    const gameFormatsQuery = useMemoFirebase(() => {
-        if (!user || gameFormatIds.length === 0) return null;
-        return query(collection(firestore, 'users', user.uid, 'gameFormats'), where(documentId(), 'in', gameFormatIds));
-    }, [firestore, user, gameFormatIds]);
-    const { data: gameFormats, isLoading: areFormatsLoading } = useCollection(gameFormatsQuery);
-
-    const allPositionsQuery = useMemoFirebase(() => {
-        if (!user || gameFormatIds.length === 0) return null;
-        return collection(firestore, `users/${user.uid}/gameFormats/${gameFormatIds[0]}/positions`);
-    }, [firestore, user, gameFormatIds]);
-    const { data: positions, isLoading: arePositionsLoading } = useCollection(allPositionsQuery);
+    useEffect(() => {
+        if (matches.length === 0) return;
+        setArePlansLoading(true);
+        Promise.all(matches.map(m => apiJSON<any[]>(`/api/matches/${m.id}/plans`, getIdToken)))
+            .then(results => setAllMatchPlans(results.flat().map(normalizeMatchPlan)))
+            .catch(() => setAllMatchPlans([]))
+            .finally(() => setArePlansLoading(false));
+    }, [matches, getIdToken]);
 
     const tournamentTimeTotals = useMemo(() => {
-        if (!players || !matches || !gameFormats || !allMatchPlans) return {};
+        if (!players.length || !matches.length || !allGameFormats) return {};
 
         const tournamentTotals: MatchTimeCalculations = players.reduce((acc: any, p: any) => ({ ...acc, [p.id]: { total: 0, positions: {} } }), {});
 
         matches.forEach((match: any) => {
-            const gameFormat = gameFormats.find((f: any) => f.id === match.gameFormatId);
+            const gameFormat = allGameFormats.find(f => f.id === match.gameFormatId);
             const matchTimes = calculateMatchTimes(match, gameFormat, allMatchPlans, players);
             Object.entries(matchTimes).forEach(([playerId, timeInfo]) => {
-                if(tournamentTotals[playerId]) {
+                if (tournamentTotals[playerId]) {
                     tournamentTotals[playerId].total += timeInfo.total;
                     Object.entries(timeInfo.positions).forEach(([pos, time]) => {
                          if (!tournamentTotals[playerId].positions[pos]) {
@@ -132,10 +125,9 @@ export default function TournamentViewPage() {
         });
         return tournamentTotals;
 
-    }, [players, matches, gameFormats, allMatchPlans]);
+    }, [players, matches, allGameFormats, allMatchPlans]);
 
     const handleAddMatch = () => {
-        // tournamentId is already in localStorage from when we navigated here
         router.push('/tournaments/add-match');
     };
 
@@ -144,7 +136,7 @@ export default function TournamentViewPage() {
         router.push('/games/play?mode=plan');
     };
 
-    const isLoading = isUserLoading || isTournamentLoading || areMatchesLoading || arePlayersLoading || arePlansLoading || areFormatsLoading || arePositionsLoading;
+    const isLoading = isTournamentLoading || areMatchesLoading || isRosterLoading || isFormatLoading || areAllFormatsLoading || arePlansLoading;
 
     if (isLoading) {
         return (
@@ -207,15 +199,15 @@ export default function TournamentViewPage() {
                             <TableRow>
                                 <TableHead>Player</TableHead>
                                 <TableHead className="text-right">Total Time</TableHead>
-                                {positions?.map((p: any) => <TableHead key={p.id} className="text-right">{p.abbreviation}</TableHead>)}
+                                {positions.map((p: any) => <TableHead key={p.id} className="text-right">{p.abbreviation}</TableHead>)}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {players?.map((player: any) => (
+                            {players.map((player: any) => (
                                 <TableRow key={player.id}>
                                     <TableCell className="font-medium">{player.name}</TableCell>
                                     <TableCell className="text-right font-mono">{formatTime(tournamentTimeTotals[player.id]?.total || 0)}</TableCell>
-                                    {positions?.map((p: any) => (
+                                    {positions.map((p: any) => (
                                          <TableCell key={p.id} className="text-right font-mono">{formatTime(tournamentTimeTotals[player.id]?.positions[p.abbreviation] || 0)}</TableCell>
                                     ))}
                                 </TableRow>
@@ -227,14 +219,14 @@ export default function TournamentViewPage() {
 
             <div className="space-y-6">
                 <h2 className="text-2xl font-bold font-headline">Games in this Tournament</h2>
-                {matches?.map((match: any) => {
-                     const gameFormat = gameFormats?.find((f: any) => f.id === match.gameFormatId);
-                     const matchTimes = calculateMatchTimes(match, gameFormat, allMatchPlans, players ?? []);
+                {matches.map((match: any) => {
+                     const gameFormat = allGameFormats?.find(f => f.id === match.gameFormatId);
+                     const matchTimes = calculateMatchTimes(match, gameFormat, allMatchPlans, players);
                     return (
                         <Card key={match.id}>
                             <CardHeader>
                                 <CardTitle>{match.name}</CardTitle>
-                                <CardDescription>Roster: {players?.[0]?.rosterName || '...'} | Format: {gameFormat?.name || '...'}</CardDescription>
+                                <CardDescription>Roster: {roster?.name || '...'} | Format: {gameFormat?.name || '...'}</CardDescription>
                             </CardHeader>
                             <CardContent>
                                 <Table>
@@ -242,15 +234,15 @@ export default function TournamentViewPage() {
                                         <TableRow>
                                             <TableHead>Player</TableHead>
                                             <TableHead className="text-right">Total Time</TableHead>
-                                            {positions?.map((p: any) => <TableHead key={p.id} className="text-right">{p.abbreviation}</TableHead>)}
+                                            {positions.map((p: any) => <TableHead key={p.id} className="text-right">{p.abbreviation}</TableHead>)}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                         {players?.map((player: any) => (
+                                         {players.map((player: any) => (
                                             <TableRow key={player.id}>
                                                 <TableCell className="font-medium">{player.name}</TableCell>
                                                 <TableCell className="text-right font-mono">{formatTime(matchTimes[player.id]?.total || 0)}</TableCell>
-                                                {positions?.map((p: any) => (
+                                                {positions.map((p: any) => (
                                                     <TableCell key={p.id} className="text-right font-mono">{formatTime(matchTimes[player.id]?.positions[p.abbreviation] || 0)}</TableCell>
                                                 ))}
                                             </TableRow>
@@ -266,7 +258,7 @@ export default function TournamentViewPage() {
                         </Card>
                     );
                 })}
-                 {(!matches || matches.length === 0) && (
+                 {matches.length === 0 && (
                     <div className="text-center py-10 border-2 border-dashed rounded-lg">
                         <BarChart2 className="mx-auto h-12 w-12 text-muted-foreground" />
                         <h3 className="mt-4 text-lg font-medium">No Games Added Yet</h3>

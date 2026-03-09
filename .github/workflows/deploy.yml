@@ -44,6 +44,10 @@ jobs:
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
           NEXT_PUBLIC_WORKER_URL: ${{ secrets.NEXT_PUBLIC_WORKER_URL }}
 
+      - name: Install Worker dependencies
+        run: npm ci
+        working-directory: worker
+
       - name: Deploy Cloudflare Worker
         run: npx wrangler deploy --config wrangler.toml
         working-directory: worker

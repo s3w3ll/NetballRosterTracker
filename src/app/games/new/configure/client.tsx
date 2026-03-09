@@ -32,7 +32,7 @@ type GameSetupFormData = z.infer<typeof gameSetupSchema>;
 
 const DEFAULT_FORMATS = [
   {
-    id: '7-a-side-default',
+    id: uuidv4(),
     name: 'Standard 7-a-side',
     teamSize: 7,
     numberOfPeriods: 4,
@@ -48,7 +48,7 @@ const DEFAULT_FORMATS = [
     ],
   },
   {
-    id: '6-a-side-default',
+    id: uuidv4(),
     name: 'Fast 6-a-side',
     teamSize: 6,
     numberOfPeriods: 4,

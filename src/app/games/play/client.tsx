@@ -29,9 +29,9 @@ const iconMap: Record<string, LucideIcon> = {
     Footprints,
 };
 
-// Positions as (x%, y%) of the 400×800 court container — attack end at top, defence at bottom.
-// x=23.4% → 93.6px centre → 13.6px left edge (just inside 10px court border with 160px-wide pills)
-// x=76.6% → 306.4px centre → 386.4px right edge (just inside 390px court border)
+// Positions as (x%, y%) of the court container — attack end at top, defence at bottom.
+// Pills are centred on these coordinates via transform: translate(-50%, -50%), so positioning
+// works at any court width. The SVG viewBox (0 0 400 800) keeps markings proportional.
 const NETBALL_COURT_SLOTS: Record<string, { x: number; y: number }> = {
   GS: { x: 50,   y: 15 },
   GA: { x: 23.4, y: 27 },
@@ -246,8 +246,8 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   return (
     <div className="flex flex-col md:flex-row gap-6 items-start">
 
-      {/* ── Court (left, fixed width) ───────────────────────────── */}
-      <div className="flex-shrink-0">
+      {/* ── Court (left, 60% of page width) ────────────────────── */}
+      <div className="w-[60%] flex-shrink-0 min-w-0">
         <Card className="bg-primary/5">
           <CardHeader className="pb-2">
             <CardTitle>Court</CardTitle>
@@ -255,9 +255,9 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
           </CardHeader>
           <CardContent className={cn(useCourtLayout ? "flex justify-center pb-4" : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4")}>
             {useCourtLayout ? (
-              /* SVG netball court for 7-aside — 400×800, attack end at top */
-              <div className="relative rounded-lg overflow-hidden" style={{ width: '400px', height: '800px' }}>
-                <svg viewBox="0 0 400 800" width="400" height="800" xmlns="http://www.w3.org/2000/svg">
+              /* SVG netball court for 7-aside — scales to container, attack end at top */
+              <div className="relative rounded-lg overflow-hidden w-full" style={{ aspectRatio: '1/2' }}>
+                <svg viewBox="0 0 400 800" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
                   <defs>
                     <linearGradient id="ncGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#1a5c30" />
@@ -300,8 +300,9 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                       onDragOver={allowDrop}
                       style={{
                         position: 'absolute',
-                        left: `calc(${slot.x}% - 80px)`,
-                        top: `calc(${slot.y}% - 29px)`,
+                        left: `${slot.x}%`,
+                        top: `${slot.y}%`,
+                        transform: 'translate(-50%, -50%)',
                         width: '160px',
                         height: '58px',
                       }}

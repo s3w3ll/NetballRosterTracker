@@ -22,10 +22,13 @@ export type Variables = {
 const app = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 // CORS — must be before auth so preflight OPTIONS requests pass through
+const FALLBACK_ORIGINS = 'https://s3w3ll.github.io,http://localhost:9002'
+const getAllowedOrigins = (env: Env) =>
+  (env.ALLOWED_ORIGINS ?? FALLBACK_ORIGINS).split(',').map((o) => o.trim())
+
 app.use('/api/*', async (c, next) => {
-  const allowedOrigins = c.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
   const corsMiddleware = cors({
-    origin: allowedOrigins,
+    origin: getAllowedOrigins(c.env),
     allowHeaders: ['Authorization', 'Content-Type'],
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     maxAge: 86400,
@@ -51,6 +54,13 @@ app.route('/api/tournaments', tournaments)
 app.get('/', (c) => c.json({ ok: true, service: 'netball-roster-tracker' }))
 
 app.onError((err, c) => {
+  // Ensure CORS headers are present on error responses so the browser
+  // doesn't block them before the client can read the error status.
+  const origin = c.req.header('origin') ?? ''
+  if (getAllowedOrigins(c.env).includes(origin)) {
+    c.header('Access-Control-Allow-Origin', origin)
+    c.header('Vary', 'Origin')
+  }
   console.error(err)
   return c.json({ error: 'Internal server error' }, 500)
 })

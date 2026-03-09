@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 FIREBASE_PROJECT_ID = "studio-4545200528-99137"
-ALLOWED_ORIGINS = "https://s3w3ll.github.io,http://localhost:9002"
+ALLOWED_ORIGINS = "https://netball.forgesync.co.nz,https://s3w3ll.github.io,http://localhost:9002"
 
 [[d1_databases]]
 binding = "DB"

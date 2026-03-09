@@ -5,8 +5,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { doc, writeBatch, collection } from 'firebase/firestore';
-import { useDoc, useFirestore, useUser, useMemoFirebase, useCollection } from '@/firebase';
+import { useFirebase } from '@/firebase';
+import { useRoster } from '@/api/hooks/use-rosters';
+import { useGameFormats } from '@/api/hooks/use-game-formats';
+import { apiJSON } from '@/api/client';
 import { useToast } from '@/hooks/use-toast';
 import { getNavId, setNavId } from '@/lib/nav';
 
@@ -28,30 +30,20 @@ export default function PlanSetupPage() {
   const router = useRouter();
   const { toast } = useToast();
   const rosterId = getNavId('rosterId');
-  const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const { getIdToken } = useFirebase();
 
-  const rosterRef = useMemoFirebase(() => {
-    if (!user || !rosterId) return null;
-    return doc(firestore, 'users', user.uid, 'rosters', rosterId);
-  }, [firestore, user, rosterId]);
-  const { data: roster, isLoading: isRosterLoading } = useDoc(rosterRef);
-
-  const gameFormatsQuery = useMemoFirebase(() => {
-      if (!user) return null;
-      return collection(firestore, 'users', user.uid, 'gameFormats');
-  }, [firestore, user]);
-  const { data: gameFormats, isLoading: areFormatsLoading } = useCollection(gameFormatsQuery);
+  const { data: roster, isLoading: isRosterLoading } = useRoster(rosterId);
+  const { data: gameFormats, isLoading: areFormatsLoading } = useGameFormats();
 
   const form = useForm<PlanSetupFormData>({
     resolver: zodResolver(planSetupSchema),
   });
 
   const onSubmit = async (data: PlanSetupFormData) => {
-    if (!user || !roster) {
-        toast({ variant: "destructive", title: "Error", description: "Cannot create a match plan without a user and roster." });
+    if (!roster) {
+        toast({ variant: "destructive", title: "Error", description: "Cannot create a match plan without a roster." });
         return;
-    };
+    }
 
     const originalFormat = gameFormats?.find(f => f.id === data.gameFormatId);
     if (!originalFormat) {
@@ -59,40 +51,28 @@ export default function PlanSetupPage() {
        return;
     }
 
-    const batch = writeBatch(firestore);
-
-    const matchId = uuidv4();
-    const newMatch = {
-        id: matchId,
-        userId: user.uid,
-        name: `Plan for ${roster.name}`,
-        team1RosterId: roster.id,
-        startTime: new Date().toISOString(),
-        gameFormatId: originalFormat.id,
-    };
-
-    const matchDocRef = doc(firestore, `users/${user.uid}/matches`, matchId);
-    batch.set(matchDocRef, newMatch);
-
-    // Create one MatchPlan document per quarter
-    for (let i = 1; i <= originalFormat.numberOfPeriods; i++) {
-        const matchPlanId = uuidv4();
-        const newMatchPlan = {
-            id: matchPlanId,
-            matchId: matchId,
-            quarter: i,
-            playerPositions: [],
-        };
-        const planDocRef = doc(firestore, `users/${user.uid}/matches/${matchId}/matchPlans`, matchPlanId);
-        batch.set(planDocRef, newMatchPlan);
-    }
-
     try {
-      await batch.commit();
-      toast({
-          title: "Match Plan Created!",
-          description: "Your new match plan has been set up.",
+      const matchId = uuidv4();
+
+      await apiJSON('/api/matches', getIdToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          id: matchId,
+          name: `Plan for ${roster.name}`,
+          team1RosterId: roster.id,
+          startTime: new Date().toISOString(),
+          gameFormatId: originalFormat.id,
+        }),
       });
+
+      for (let i = 1; i <= originalFormat.numberOfPeriods; i++) {
+        await apiJSON(`/api/matches/${matchId}/plans`, getIdToken, {
+          method: 'POST',
+          body: JSON.stringify({ id: uuidv4(), quarter: i, playerPositions: [] }),
+        });
+      }
+
+      toast({ title: "Match Plan Created!", description: "Your new match plan has been set up." });
       setNavId('gameId', matchId);
       router.push('/games/play?mode=plan');
     } catch (error: any) {
@@ -104,7 +84,7 @@ export default function PlanSetupPage() {
     }
   };
 
-  const isLoading = isUserLoading || isRosterLoading || areFormatsLoading;
+  const isLoading = isRosterLoading || areFormatsLoading;
 
   if (isLoading) {
     return (

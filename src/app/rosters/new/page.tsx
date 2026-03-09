@@ -2,36 +2,28 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useFirebase } from '@/firebase';
-import { collection, addDoc, writeBatch, doc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
-import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 import { v4 as uuidv4 } from 'uuid';
-
-const playerSchema = z.object({
-  name: z.string().min(1, "Player name cannot be empty"),
-  position: z.string().optional(),
-});
+import { apiJSON } from '@/api/client';
 
 const rosterSchema = z.object({
   name: z.string().min(1, "Roster name is required."),
   description: z.string().optional(),
-  players: z.array(playerSchema).optional(),
   playerNames: z.string().optional(),
 });
 
 type RosterFormData = z.infer<typeof rosterSchema>;
 
 export default function NewRosterPage() {
-  const { auth, firestore } = useFirebase();
+  const { getIdToken } = useFirebase();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -40,52 +32,29 @@ export default function NewRosterPage() {
     defaultValues: {
       name: '',
       description: '',
-      players: [],
       playerNames: '',
     },
   });
 
   const onSubmit = async (data: RosterFormData) => {
-    if (!auth.currentUser) {
-      toast({
-        variant: "destructive",
-        title: "Authentication Error",
-        description: "You must be logged in to create a roster.",
-      });
-      return;
-    }
-
     try {
-        const playerNames = data.playerNames?.split('\n').filter(name => name.trim() !== '') || [];
-        const rosterId = uuidv4();
-        const playerIds = [];
+      const playerNames = data.playerNames?.split('\n').filter(name => name.trim() !== '') || [];
+      const rosterId = uuidv4();
+      const players = playerNames.map(name => ({
+        id: uuidv4(),
+        name: name.trim(),
+        position: 'Unknown',
+      }));
 
-        const batch = writeBatch(firestore);
-
-        const playersCollectionRef = collection(firestore, `users/${auth.currentUser.uid}/rosters/${rosterId}/players`);
-        
-        for (const playerName of playerNames) {
-            const playerId = uuidv4();
-            const playerRef = doc(playersCollectionRef, playerId);
-            batch.set(playerRef, {
-                id: playerId,
-                name: playerName,
-                position: "Unknown", // Default position
-                rosterId: rosterId
-            });
-            playerIds.push(playerId);
-        }
-
-        const rosterRef = doc(firestore, `users/${auth.currentUser.uid}/rosters/${rosterId}`);
-        batch.set(rosterRef, {
-            id: rosterId,
-            userId: auth.currentUser.uid,
-            name: data.name,
-            description: data.description,
-            playerIds: playerIds
-        });
-        
-        await batch.commit();
+      await apiJSON('/api/rosters', getIdToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          id: rosterId,
+          name: data.name,
+          description: data.description || null,
+          players,
+        }),
+      });
 
       toast({
         title: "Roster Created",

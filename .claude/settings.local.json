@@ -19,7 +19,11 @@
       "Bash(powershell -Command \"Get-ChildItem ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\games'' -Recurse | Select-Object FullName\")",
       "Bash(powershell -Command \"Get-Content -LiteralPath ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\games\\\\[gameId]\\\\page.js'' | ForEach-Object { if \\($_ -match ''generateStaticParams|GenerateStaticParams|generatestatic''\\) { $_ } }\")",
       "Bash(powershell -Command \"Get-Content -LiteralPath ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\games\\\\[gameId]\\\\page.js'' -Raw | Select-String -Pattern ''generateStaticParams'' -AllMatches | ForEach-Object { $_Matches } | Select-Object Value, Index\")",
-      "Bash(powershell -Command \"Get-Content -LiteralPath ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\games\\\\[gameId]\\\\page.js'' -Raw | Select-String ''generateStaticParams''\")"
+      "Bash(powershell -Command \"Get-Content -LiteralPath ''C:\\\\Repos\\\\NetballRosterTracker\\\\.next\\\\server\\\\app\\\\games\\\\[gameId]\\\\page.js'' -Raw | Select-String ''generateStaticParams''\")",
+      "mcp__f6b46671-2e26-47d2-8de1-c095c04d3524__accounts_list",
+      "mcp__f6b46671-2e26-47d2-8de1-c095c04d3524__d1_databases_list",
+      "mcp__f6b46671-2e26-47d2-8de1-c095c04d3524__workers_list",
+      "mcp__f6b46671-2e26-47d2-8de1-c095c04d3524__set_active_account"
     ]
   }
 }

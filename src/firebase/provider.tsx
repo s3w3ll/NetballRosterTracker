@@ -1,6 +1,6 @@
 'use client';
 
-import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
+import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect, useCallback } from 'react';
 import { FirebaseApp } from 'firebase/app';
 import { Firestore } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged } from 'firebase/auth';
@@ -26,6 +26,7 @@ export interface FirebaseContextState {
   firebaseApp: FirebaseApp | null;
   firestore: Firestore | null;
   auth: Auth | null; // The Auth service instance
+  getIdToken: () => Promise<string>;
   // User authentication state
   user: User | null;
   isUserLoading: boolean; // True during initial auth check
@@ -37,6 +38,7 @@ export interface FirebaseServicesAndUser {
   firebaseApp: FirebaseApp;
   firestore: Firestore;
   auth: Auth;
+  getIdToken: () => Promise<string>;
   user: User | null;
   isUserLoading: boolean;
   userError: Error | null;
@@ -89,6 +91,12 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     return () => unsubscribe(); // Cleanup
   }, [auth]); // Depends on the auth instance
 
+  const getIdToken = useCallback((): Promise<string> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return Promise.reject(new Error('Not authenticated'));
+    return currentUser.getIdToken();
+  }, [auth]);
+
   // Memoize the context value
   const contextValue = useMemo((): FirebaseContextState => {
     const servicesAvailable = !!(firebaseApp && firestore && auth);
@@ -97,11 +105,12 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       firebaseApp: servicesAvailable ? firebaseApp : null,
       firestore: servicesAvailable ? firestore : null,
       auth: servicesAvailable ? auth : null,
+      getIdToken,
       user: userAuthState.user,
       isUserLoading: userAuthState.isUserLoading,
       userError: userAuthState.userError,
     };
-  }, [firebaseApp, firestore, auth, userAuthState]);
+  }, [firebaseApp, firestore, auth, getIdToken, userAuthState]);
 
   return (
     <FirebaseContext.Provider value={contextValue}>
@@ -130,6 +139,7 @@ export const useFirebase = (): FirebaseServicesAndUser => {
     firebaseApp: context.firebaseApp,
     firestore: context.firestore,
     auth: context.auth,
+    getIdToken: context.getIdToken,
     user: context.user,
     isUserLoading: context.isUserLoading,
     userError: context.userError,

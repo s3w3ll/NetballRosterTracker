@@ -1,0 +1,13 @@
+name = "netball-roster-tracker"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+FIREBASE_PROJECT_ID = "studio-4545200528-99137"
+ALLOWED_ORIGINS = "https://s3w3ll.github.io,http://localhost:9002"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "netball-roster-tracker-db"
+database_id = "86e5d16b-ddb6-4b67-bc06-e5e970e3da69"

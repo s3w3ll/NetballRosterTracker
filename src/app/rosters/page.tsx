@@ -4,26 +4,14 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { PlusCircle, Users, ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useUser, useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection, query, where } from "firebase/firestore";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from "next/navigation";
 import { setNavId } from "@/lib/nav";
+import { useRosters } from "@/api/hooks/use-rosters";
 
 export default function RostersPage() {
-  const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
   const router = useRouter();
-
-  const rostersQuery = useMemoFirebase(() => {
-    if (!user) return null;
-    return query(
-      collection(firestore, "users", user.uid, "rosters")
-    );
-  }, [firestore, user]);
-
-  const { data: rosters, isLoading } = useCollection(rostersQuery);
-  const loading = isUserLoading || isLoading;
+  const { data: rosters, isLoading } = useRosters();
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -40,7 +28,7 @@ export default function RostersPage() {
         </Button>
       </div>
 
-      {loading && (
+      {isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <Skeleton className="h-40" />
             <Skeleton className="h-40" />
@@ -48,7 +36,7 @@ export default function RostersPage() {
         </div>
       )}
 
-      {!loading && rosters && rosters.length > 0 && (
+      {!isLoading && rosters && rosters.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {rosters.map((roster) => (
             <Card key={roster.id}>
@@ -59,7 +47,7 @@ export default function RostersPage() {
               <CardContent>
                 <div className="flex items-center text-sm text-muted-foreground">
                     <Users className="mr-2 h-4 w-4" />
-                    <span>{roster.playerIds?.length || 0} Players</span>
+                    <span>{roster.playerCount} Players</span>
                 </div>
               </CardContent>
               <CardFooter>
@@ -72,7 +60,7 @@ export default function RostersPage() {
         </div>
       )}
 
-      {!loading && (!rosters || rosters.length === 0) && (
+      {!isLoading && (!rosters || rosters.length === 0) && (
         <Card>
           <CardHeader>
             <CardTitle>Your Rosters</CardTitle>

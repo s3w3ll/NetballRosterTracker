@@ -6,12 +6,22 @@ import { useMatch } from '@/api/hooks/use-matches';
 import { useGameFormat } from '@/api/hooks/use-game-formats';
 import { useRoster } from '@/api/hooks/use-rosters';
 import { useMatchPlans } from '@/api/hooks/use-match-plans';
+import { useMatchPlansMultiple } from '@/api/hooks/use-match-plans-multiple';
+import { useTournaments } from '@/api/hooks/use-tournaments';
 import { upsertMatchPlanNonBlocking } from '@/firebase/non-blocking-updates';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Timer, Users, User, Shield, Target, Circle, Feather, Footprints, Play, Pause, RefreshCw, ArrowRight, ClipboardEdit, Gamepad2 } from 'lucide-react';
+import { Timer, Users, User, Shield, Target, Circle, Feather, Footprints, Play, Pause, RefreshCw, ArrowRight, ClipboardEdit, Gamepad2, ChevronDown } from 'lucide-react';
 import { useState, useEffect, useMemo, DragEvent, useRef, useCallback } from 'react';
 import { type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -424,12 +434,129 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 // Data structure for the plan: { [period: number]: { [positionAbbr: string]: playerId | null } }
 type PlayerPositionsPlan = Record<number, Record<string, string | null>>;
 
+type PlayerTimeInfo = { total: number; positions: Record<string, number> };
+
+function TournamentHistoryPanel({
+    tournamentName,
+    otherMatchCount,
+    plansLoading,
+    playerTimeTotals,
+    players,
+    positions,
+}: {
+    tournamentName: string;
+    otherMatchCount: number;
+    plansLoading: boolean;
+    playerTimeTotals: Record<string, PlayerTimeInfo>;
+    players: any[];
+    positions: any[];
+}) {
+    const [isOpen, setIsOpen] = useState(true);
+    const formatTime = (seconds: number) => `${Math.floor(seconds / 60)}m`;
+    const hasAnyData = players.some(p => (playerTimeTotals[p.id]?.total || 0) > 0);
+
+    return (
+        <Card className="mb-6">
+            <CardHeader
+                className="cursor-pointer select-none pb-3"
+                onClick={() => setIsOpen(v => !v)}
+            >
+                <div className="flex items-center justify-between">
+                    <div>
+                        <CardTitle className="text-base">Tournament History — {tournamentName}</CardTitle>
+                        <CardDescription>
+                            {otherMatchCount === 0
+                                ? 'No other games in this tournament yet'
+                                : `Player time across ${otherMatchCount} other game${otherMatchCount === 1 ? '' : 's'} in this tournament`}
+                        </CardDescription>
+                    </div>
+                    <ChevronDown className={cn('h-5 w-5 text-muted-foreground transition-transform duration-200', isOpen && 'rotate-180')} />
+                </div>
+            </CardHeader>
+            {isOpen && (
+                <CardContent>
+                    {plansLoading ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-8 w-full" />
+                            <Skeleton className="h-8 w-full" />
+                            <Skeleton className="h-8 w-full" />
+                        </div>
+                    ) : otherMatchCount === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-2">Add more matches to this tournament to see accumulated player time here.</p>
+                    ) : !hasAnyData ? (
+                        <p className="text-sm text-muted-foreground text-center py-2">No plans have been saved for other games in this tournament yet.</p>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Player</TableHead>
+                                    <TableHead className="text-right">Total</TableHead>
+                                    {positions.map((p: any) => (
+                                        <TableHead key={p.id} className="text-right">{p.abbreviation}</TableHead>
+                                    ))}
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {[...players].sort((a, b) => a.name.localeCompare(b.name)).map((player: any) => {
+                                    const timeInfo = playerTimeTotals[player.id];
+                                    return (
+                                        <TableRow key={player.id}>
+                                            <TableCell className="font-medium">{player.name}</TableCell>
+                                            <TableCell className="text-right font-mono">
+                                                {timeInfo?.total ? formatTime(timeInfo.total) : '—'}
+                                            </TableCell>
+                                            {positions.map((p: any) => (
+                                                <TableCell key={p.id} className="text-right font-mono">
+                                                    {timeInfo?.positions[p.abbreviation] ? formatTime(timeInfo.positions[p.abbreviation]) : '—'}
+                                                </TableCell>
+                                            ))}
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            )}
+        </Card>
+    );
+}
+
 function MatchPlanner({ match, gameFormat, positions, players, matchPlans }: { match: any, gameFormat: any, positions: any[], players: any[], matchPlans: any[] }) {
     const { toast } = useToast();
     const { getIdToken } = useFirebase();
     const [plan, setPlan] = useState<PlayerPositionsPlan>({});
     const [isDragging, setIsDragging] = useState(false);
     const lastUpdatedPeriod = useRef<number | null>(null);
+
+    // Tournament history: find if this match belongs to a tournament
+    const { data: tournaments } = useTournaments();
+    const currentTournament = useMemo(
+        () => tournaments?.find(t => t.matchIds.includes(match.id)) ?? null,
+        [tournaments, match.id]
+    );
+    const otherMatchIds = useMemo(
+        () => currentTournament?.matchIds.filter(id => id !== match.id) ?? [],
+        [currentTournament, match.id]
+    );
+    const { data: otherPlansData, isLoading: otherPlansLoading } = useMatchPlansMultiple(otherMatchIds);
+    const otherMatchTimeTotals = useMemo((): Record<string, PlayerTimeInfo> => {
+        if (!otherPlansData || !players.length || !gameFormat) return {};
+        const periodDuration = gameFormat.periodDuration * 60;
+        const totals: Record<string, PlayerTimeInfo> = players.reduce(
+            (acc, p) => ({ ...acc, [p.id]: { total: 0, positions: {} } }),
+            {}
+        );
+        otherPlansData.forEach(plan => {
+            plan.playerPositions.forEach(({ playerId, position }) => {
+                if (totals[playerId]) {
+                    totals[playerId].total += periodDuration;
+                    totals[playerId].positions[position] = (totals[playerId].positions[position] || 0) + periodDuration;
+                }
+            });
+        });
+        return totals;
+    }, [otherPlansData, players, gameFormat]);
 
     useEffect(() => {
         if (!gameFormat || !positions || !matchPlans) return;
@@ -604,6 +731,16 @@ function MatchPlanner({ match, gameFormat, positions, players, matchPlans }: { m
 
     return (
         <div className="space-y-6">
+            {currentTournament && (
+                <TournamentHistoryPanel
+                    tournamentName={currentTournament.name}
+                    otherMatchCount={otherMatchIds.length}
+                    plansLoading={otherPlansLoading}
+                    playerTimeTotals={otherMatchTimeTotals}
+                    players={players}
+                    positions={positions}
+                />
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
                 {Array.from({ length: gameFormat.numberOfPeriods }, (_, i) => i + 1).map(period => {
                     const periodPlan = plan[period] || {};

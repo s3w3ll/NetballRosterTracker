@@ -25,7 +25,10 @@
       "mcp__f6b46671-2e26-47d2-8de1-c095c04d3524__workers_list",
       "mcp__f6b46671-2e26-47d2-8de1-c095c04d3524__set_active_account",
       "Bash(python3:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(find /c/Repos/NetballRosterTracker/src -type f -name *plan*)",
+      "Bash(npx tsc:*)",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }

@@ -598,7 +598,7 @@ function MatchPlanner({ match, gameFormat, positions, players, matchPlans }: { m
         }
 
         const playerPositionsForFirestore = Object.entries(periodPlan)
-            .filter(([, playerId]) => playerId !== null)
+            .filter((entry): entry is [string, string] => entry[1] !== null)
             .map(([position, playerId]) => ({ position, playerId }));
 
         upsertMatchPlanNonBlocking(match.id, { id: matchPlanDoc.id, quarter: period, playerPositions: playerPositionsForFirestore }, getIdToken);

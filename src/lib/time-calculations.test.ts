@@ -65,6 +65,16 @@ describe('calculatePlayerTimes', () => {
     expect(result['p1'].total).toBe(360)
     expect(result['p2'].total).toBe(720)
   })
+
+  it('handles direct position-to-position switch without bench event', () => {
+    const result = calculatePlayerTimes([
+      ev(1, 0,   'p1', 'GS'),
+      ev(1, 360, 'p1', 'GA'),  // switches directly from GS to GA at 6:00
+    ], 720)
+    expect(result['p1'].positions['GS']).toBe(360)  // 0→360
+    expect(result['p1'].positions['GA']).toBe(360)  // 360→720
+    expect(result['p1'].total).toBe(720)
+  })
 })
 
 describe('groupPositionTimes', () => {

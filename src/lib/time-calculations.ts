@@ -50,7 +50,14 @@ export function calculatePlayerTimes(
 
       for (const event of playerEvents) {
         if (event.positionAbbr !== null) {
-          // Player coming on to a position
+          // If already on court in a different position, close the previous interval first
+          if (currentPosition !== null) {
+            const interval = event.secondsElapsed - onTime
+            totals[playerId].positions[currentPosition] =
+              (totals[playerId].positions[currentPosition] || 0) + interval
+            totals[playerId].total += interval
+          }
+          // Player coming on to a (new) position
           currentPosition = event.positionAbbr
           onTime = event.secondsElapsed
         } else {

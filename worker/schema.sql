@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS positions (
   user_id        TEXT NOT NULL,
   name           TEXT NOT NULL,
   abbreviation   TEXT NOT NULL,
-  icon           TEXT
+  icon           TEXT,
+  position_group TEXT
 );
 
 CREATE TABLE IF NOT EXISTS matches (

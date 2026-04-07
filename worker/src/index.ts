@@ -9,11 +9,13 @@ import matches from './routes/matches'
 import matchPlans from './routes/match-plans'
 import subEvents from './routes/sub-events'
 import tournaments from './routes/tournaments'
+import migrate from './routes/migrate'
 
 export type Env = {
   DB: D1Database
   FIREBASE_PROJECT_ID: string
   ALLOWED_ORIGINS: string
+  MIGRATION_SECRET?: string
 }
 
 export type Variables = {
@@ -51,6 +53,9 @@ app.route('/api/matches/:matchId/plans', matchPlans)
 app.route('/api/match-plans', matchPlans)
 app.route('/api/matches/:matchId/sub-events', subEvents)
 app.route('/api/tournaments', tournaments)
+
+// Mounted OUTSIDE /api/* so it bypasses the auth middleware
+app.route('/migrate', migrate)
 
 // Health check (no auth)
 app.get('/', (c) => c.json({ ok: true, service: 'netball-roster-tracker' }))

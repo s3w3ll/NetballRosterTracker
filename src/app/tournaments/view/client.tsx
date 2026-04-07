@@ -7,7 +7,8 @@ import { useTournament } from '@/api/hooks/use-tournaments';
 import { useRoster } from '@/api/hooks/use-rosters';
 import { useGameFormats, useGameFormat } from '@/api/hooks/use-game-formats';
 import { apiJSON } from '@/api/client';
-import { normalizeMatchPlan } from '@/api/types';
+import { normalizeSubEvent } from '@/api/types';
+import { calculatePlayerTimes } from '@/lib/time-calculations';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -29,30 +30,6 @@ type PlayerTimeInfo = { total: number; positions: Record<string, number> };
 type MatchTimeCalculations = Record<string, PlayerTimeInfo>;
 
 const formatTime = (seconds: number) => `${Math.floor(seconds / 60)}m`;
-
-function calculateMatchTimes(match: any, gameFormat: any, matchPlans: any[], players: any[]): MatchTimeCalculations {
-    if (!gameFormat || !players || !matchPlans) return {};
-
-    const periodDuration = gameFormat.periodDuration * 60;
-    const playerTimes: MatchTimeCalculations = players.reduce((acc, p) => ({
-      ...acc,
-      [p.id]: { total: 0, positions: {} },
-    }), {});
-
-    matchPlans.filter(mp => mp.matchId === match.id).forEach(plan => {
-      plan.playerPositions.forEach((pos: { playerId: string; position: string }) => {
-        if (playerTimes[pos.playerId]) {
-          playerTimes[pos.playerId].total += periodDuration;
-          if (!playerTimes[pos.playerId].positions[pos.position]) {
-            playerTimes[pos.playerId].positions[pos.position] = 0;
-          }
-          playerTimes[pos.playerId].positions[pos.position] += periodDuration;
-        }
-      });
-    });
-
-    return playerTimes;
-}
 
 
 export default function TournamentViewPage() {
@@ -86,21 +63,16 @@ export default function TournamentViewPage() {
     const players = roster?.players ?? [];
     const positions = primaryGameFormat?.positions ?? [];
 
-    const gameFormats = useMemo(() =>
-        allGameFormats?.filter(f => gameFormatIds.includes(f.id)) ?? [],
-        [allGameFormats, gameFormatIds]
-    );
-
-    const [allMatchPlans, setAllMatchPlans] = useState<any[]>([]);
-    const [arePlansLoading, setArePlansLoading] = useState(false);
+    const [allSubEvents, setAllSubEvents] = useState<any[]>([]);
+    const [areSubEventsLoading, setAreSubEventsLoading] = useState(false);
 
     useEffect(() => {
         if (matches.length === 0) return;
-        setArePlansLoading(true);
-        Promise.all(matches.map(m => apiJSON<any[]>(`/api/matches/${m.id}/plans`, getIdToken)))
-            .then(results => setAllMatchPlans(results.flat().map(normalizeMatchPlan)))
-            .catch(() => setAllMatchPlans([]))
-            .finally(() => setArePlansLoading(false));
+        setAreSubEventsLoading(true);
+        Promise.all(matches.map(m => apiJSON<any[]>(`/api/matches/${m.id}/sub-events`, getIdToken)))
+            .then(results => setAllSubEvents(results.flat().map(normalizeSubEvent)))
+            .catch(() => setAllSubEvents([]))
+            .finally(() => setAreSubEventsLoading(false));
     }, [matches, getIdToken]);
 
     const tournamentTimeTotals = useMemo(() => {
@@ -110,22 +82,24 @@ export default function TournamentViewPage() {
 
         matches.forEach((match: any) => {
             const gameFormat = allGameFormats.find(f => f.id === match.gameFormatId);
-            const matchTimes = calculateMatchTimes(match, gameFormat, allMatchPlans, players);
+            if (!gameFormat) return;
+            const matchSubEvents = allSubEvents.filter(e => e.matchId === match.id);
+            const matchTimes = calculatePlayerTimes(matchSubEvents, gameFormat.periodDuration * 60);
             Object.entries(matchTimes).forEach(([playerId, timeInfo]) => {
                 if (tournamentTotals[playerId]) {
                     tournamentTotals[playerId].total += timeInfo.total;
                     Object.entries(timeInfo.positions).forEach(([pos, time]) => {
-                         if (!tournamentTotals[playerId].positions[pos]) {
+                        if (!tournamentTotals[playerId].positions[pos]) {
                             tournamentTotals[playerId].positions[pos] = 0;
                         }
-                        tournamentTotals[playerId].positions[pos] += time;
+                        tournamentTotals[playerId].positions[pos] += time as number;
                     });
                 }
             });
         });
         return tournamentTotals;
 
-    }, [players, matches, allGameFormats, allMatchPlans]);
+    }, [players, matches, allGameFormats, allSubEvents]);
 
     const handleAddMatch = () => {
         router.push('/tournaments/add-match');
@@ -136,7 +110,7 @@ export default function TournamentViewPage() {
         router.push('/games/play?mode=plan');
     };
 
-    const isLoading = isTournamentLoading || areMatchesLoading || isRosterLoading || isFormatLoading || areAllFormatsLoading || arePlansLoading;
+    const isLoading = isTournamentLoading || areMatchesLoading || isRosterLoading || isFormatLoading || areAllFormatsLoading || areSubEventsLoading;
 
     if (isLoading) {
         return (
@@ -221,7 +195,10 @@ export default function TournamentViewPage() {
                 <h2 className="text-2xl font-bold font-headline">Games in this Tournament</h2>
                 {matches.map((match: any) => {
                      const gameFormat = allGameFormats?.find(f => f.id === match.gameFormatId);
-                     const matchTimes = calculateMatchTimes(match, gameFormat, allMatchPlans, players);
+                     const matchSubEvents = allSubEvents.filter(e => e.matchId === match.id);
+                     const matchTimes = gameFormat
+                        ? calculatePlayerTimes(matchSubEvents, gameFormat.periodDuration * 60)
+                        : {};
                     return (
                         <Card key={match.id}>
                             <CardHeader>

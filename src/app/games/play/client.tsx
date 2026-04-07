@@ -12,7 +12,6 @@ import MatchPlanEditor from '@/app/games/play/components/MatchPlanEditor';
 import { useTournaments } from '@/api/hooks/use-tournaments';
 import { v4 as uuidv4 } from 'uuid'
 import {
-  upsertMatchPlanNonBlocking,
   createSubEventNonBlocking,
   bulkCreateSubEventsNonBlocking,
 } from '@/firebase/non-blocking-updates';

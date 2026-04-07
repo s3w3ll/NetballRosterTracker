@@ -28,20 +28,6 @@ export function deletePlayerNonBlocking(playerId: string, getIdToken: GetIdToken
 }
 
 /**
- * Upserts a match plan (quarter assignment). Does NOT await the result.
- */
-export function upsertMatchPlanNonBlocking(
-  matchId: string,
-  plan: { id: string; quarter: number; playerPositions: Array<{ position: string; playerId: string }> },
-  getIdToken: GetIdToken
-) {
-  apiFetch(`/api/matches/${matchId}/plans`, getIdToken, {
-    method: 'POST',
-    body: JSON.stringify(plan),
-  }).catch((err) => console.error('upsertMatchPlanNonBlocking failed', err))
-}
-
-/**
  * Creates a sub event (position assignment or bench). Does NOT await the result.
  */
 export function createSubEventNonBlocking(

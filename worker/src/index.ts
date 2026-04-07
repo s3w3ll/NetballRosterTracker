@@ -6,7 +6,6 @@ import players from './routes/players'
 import gameFormats from './routes/game-formats'
 import positions from './routes/positions'
 import matches from './routes/matches'
-import matchPlans from './routes/match-plans'
 import subEvents from './routes/sub-events'
 import tournaments from './routes/tournaments'
 import migrate from './routes/migrate'
@@ -49,8 +48,6 @@ app.route('/api/players', players)
 app.route('/api/game-formats', gameFormats)
 app.route('/api/positions', positions)
 app.route('/api/matches', matches)
-app.route('/api/matches/:matchId/plans', matchPlans)
-app.route('/api/match-plans', matchPlans)
 app.route('/api/matches/:matchId/sub-events', subEvents)
 app.route('/api/tournaments', tournaments)
 

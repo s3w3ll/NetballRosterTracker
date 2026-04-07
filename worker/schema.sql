@@ -64,3 +64,13 @@ CREATE TABLE IF NOT EXISTS tournament_matches (
   match_id      TEXT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
   PRIMARY KEY (tournament_id, match_id)
 );
+
+CREATE TABLE IF NOT EXISTS sub_events (
+  id              TEXT PRIMARY KEY,
+  match_id        TEXT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  user_id         TEXT NOT NULL,
+  period          INTEGER NOT NULL,
+  seconds_elapsed INTEGER NOT NULL DEFAULT 0,
+  player_id       TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  position_abbr   TEXT  -- NULL means player is going to bench
+);

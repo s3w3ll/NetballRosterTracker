@@ -20,6 +20,7 @@ export interface Position {
   abbreviation: string
   icon?: string
   gameFormatId: string
+  positionGroup?: string | null  // e.g. 'A' for A1/A2 in 6-aside; null = no grouping
 }
 
 export interface GameFormat {
@@ -85,6 +86,7 @@ export function normalizePosition(raw: any): Position {
     abbreviation: raw.abbreviation,
     icon: raw.icon ?? undefined,
     gameFormatId: raw.game_format_id,
+    positionGroup: raw.position_group ?? null,
   }
 }
 
@@ -118,6 +120,26 @@ export function normalizeMatchPlan(raw: any): MatchPlan {
     matchId: raw.match_id,
     quarter: raw.quarter,
     playerPositions: raw.playerPositions ?? [],
+  }
+}
+
+export interface SubEvent {
+  id: string
+  matchId: string
+  period: number
+  secondsElapsed: number
+  playerId: string
+  positionAbbr: string | null  // null = bench
+}
+
+export function normalizeSubEvent(raw: any): SubEvent {
+  return {
+    id: raw.id,
+    matchId: raw.match_id,
+    period: raw.period,
+    secondsElapsed: raw.seconds_elapsed,
+    playerId: raw.player_id,
+    positionAbbr: raw.position_abbr ?? null,
   }
 }
 

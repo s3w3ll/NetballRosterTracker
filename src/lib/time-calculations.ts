@@ -1,11 +1,6 @@
-export interface SubEvent {
-  id: string
-  matchId: string
-  period: number
-  secondsElapsed: number
-  playerId: string
-  positionAbbr: string | null  // null = bench
-}
+import type { SubEvent } from '@/api/types'
+
+export type { SubEvent } from '@/api/types'
 
 export type PlayerTimeTotals = Record<string, {
   total: number

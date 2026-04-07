@@ -40,3 +40,72 @@ export function upsertMatchPlanNonBlocking(
     body: JSON.stringify(plan),
   }).catch((err) => console.error('upsertMatchPlanNonBlocking failed', err))
 }
+
+/**
+ * Creates a sub event (position assignment or bench). Does NOT await the result.
+ */
+export function createSubEventNonBlocking(
+  matchId: string,
+  event: {
+    id: string
+    period: number
+    secondsElapsed: number
+    playerId: string
+    positionAbbr: string | null
+  },
+  getIdToken: GetIdToken
+) {
+  apiFetch(`/api/matches/${matchId}/sub-events`, getIdToken, {
+    method: 'POST',
+    body: JSON.stringify(event),
+  }).catch((err) => console.error('createSubEventNonBlocking failed', err))
+}
+
+/**
+ * Creates multiple sub events in one request (e.g. starting lineup). Does NOT await.
+ */
+export function bulkCreateSubEventsNonBlocking(
+  matchId: string,
+  events: Array<{
+    id: string
+    period: number
+    secondsElapsed: number
+    playerId: string
+    positionAbbr: string | null
+  }>,
+  getIdToken: GetIdToken
+) {
+  if (events.length === 0) return
+  apiFetch(`/api/matches/${matchId}/sub-events/bulk`, getIdToken, {
+    method: 'POST',
+    body: JSON.stringify({ events }),
+  }).catch((err) => console.error('bulkCreateSubEventsNonBlocking failed', err))
+}
+
+/**
+ * Updates a sub event's time and/or position. Does NOT await.
+ */
+export function updateSubEventNonBlocking(
+  matchId: string,
+  eventId: string,
+  changes: { secondsElapsed: number; positionAbbr: string | null },
+  getIdToken: GetIdToken
+) {
+  apiFetch(`/api/matches/${matchId}/sub-events/${eventId}`, getIdToken, {
+    method: 'PUT',
+    body: JSON.stringify(changes),
+  }).catch((err) => console.error('updateSubEventNonBlocking failed', err))
+}
+
+/**
+ * Deletes a sub event. Does NOT await.
+ */
+export function deleteSubEventNonBlocking(
+  matchId: string,
+  eventId: string,
+  getIdToken: GetIdToken
+) {
+  apiFetch(`/api/matches/${matchId}/sub-events/${eventId}`, getIdToken, {
+    method: 'DELETE',
+  }).catch((err) => console.error('deleteSubEventNonBlocking failed', err))
+}

@@ -7,6 +7,8 @@ import { useGameFormat } from '@/api/hooks/use-game-formats';
 import { useRoster } from '@/api/hooks/use-rosters';
 import { useMatchPlans } from '@/api/hooks/use-match-plans';
 import { useMatchPlansMultiple } from '@/api/hooks/use-match-plans-multiple';
+import { useSubEvents } from '@/api/hooks/use-sub-events';
+import SubEventPanel from '@/app/games/play/components/SubEventPanel';
 import { useTournaments } from '@/api/hooks/use-tournaments';
 import { v4 as uuidv4 } from 'uuid'
 import {
@@ -82,6 +84,8 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 
   const { getIdToken } = useFirebase()
   const initialLineupStamped = useRef(false)
+
+  const { data: subEvents, create: createSubEvent, update: updateSubEvent, remove: removeSubEvent } = useSubEvents(match.id)
 
   const onCourtPlayerIds = useMemo(() => Object.values(courtPositions).filter(Boolean) as string[], [courtPositions]);
 
@@ -363,6 +367,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   );
 
   return (
+    <>
     <div className="flex flex-col md:flex-row gap-6 items-start">
 
       {/* ── Court (left, 60% of page width) ────────────────────── */}
@@ -551,6 +556,20 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
       </div>
 
     </div>
+
+    {subEvents && (
+      <SubEventPanel
+        currentPeriod={currentPeriod}
+        numberOfPeriods={gameFormat?.numberOfPeriods ?? 4}
+        subEvents={subEvents}
+        players={players}
+        positions={positions}
+        onCreate={createSubEvent}
+        onUpdate={updateSubEvent}
+        onRemove={removeSubEvent}
+      />
+    )}
+    </>
   )
 }
 

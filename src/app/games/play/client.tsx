@@ -69,6 +69,8 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   const [playerTimeOnCourt, setPlayerTimeOnCourt] = useState<Record<string, number>>({});
   const [playerTimeInPosition, setPlayerTimeInPosition] = useState<Record<string, Record<string, number>>>({});
   const [isDragging, setIsDragging] = useState(false);
+  const [isEditingTimer, setIsEditingTimer] = useState(false)
+  const [timerInputValue, setTimerInputValue] = useState('')
 
   const lastUpdateTime = useRef<number | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -184,6 +186,24 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
     setTime(gameFormat.periodDuration * 60);
     lastUpdateTime.current = null;
   };
+
+  const handleTimerClick = () => {
+    if (isActive) setIsActive(false)
+    setTimerInputValue(formatTime(time))
+    setIsEditingTimer(true)
+  }
+
+  const handleTimerInputConfirm = () => {
+    const parts = timerInputValue.split(':')
+    if (parts.length === 2) {
+      const mins = parseInt(parts[0], 10)
+      const secs = parseInt(parts[1], 10)
+      if (!isNaN(mins) && !isNaN(secs)) {
+        setTime(mins * 60 + secs)
+      }
+    }
+    setIsEditingTimer(false)
+  }
 
   const handleDragStart = (e: DragEvent<HTMLDivElement>, playerId: string) => {
     e.dataTransfer.setData("playerId", playerId);
@@ -391,7 +411,25 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
             <CardTitle className="text-sm font-medium">Game Clock</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold font-mono tracking-tighter">{formatTime(time)}</div>
+            {isEditingTimer ? (
+              <input
+                type="text"
+                className="text-4xl font-bold font-mono tracking-tighter w-32 bg-transparent border-b-2 border-primary focus:outline-none"
+                value={timerInputValue}
+                onChange={e => setTimerInputValue(e.target.value)}
+                onBlur={handleTimerInputConfirm}
+                onKeyDown={e => { if (e.key === 'Enter') handleTimerInputConfirm() }}
+                autoFocus
+              />
+            ) : (
+              <div
+                className="text-4xl font-bold font-mono tracking-tighter cursor-pointer hover:text-primary transition-colors"
+                title="Tap to correct timer"
+                onClick={handleTimerClick}
+              >
+                {formatTime(time)}
+              </div>
+            )}
             <div className="flex items-center gap-2 mt-2">
               <Button size="sm" variant="outline" onClick={toggleTimer}>
                 {isActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}

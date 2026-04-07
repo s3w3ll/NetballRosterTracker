@@ -11,10 +11,12 @@
   },
   "dependencies": {
     "hono": "^4.7.0",
-    "jose": "^5.10.0"
+    "jose": "^5.10.0",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250214.0",
+    "@types/uuid": "^10.0.0",
     "typescript": "^5.7.0",
     "wrangler": "^4.71.0"
   }

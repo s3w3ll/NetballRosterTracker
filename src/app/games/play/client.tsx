@@ -5,10 +5,10 @@ import { useFirebase } from '@/firebase';
 import { useMatch } from '@/api/hooks/use-matches';
 import { useGameFormat } from '@/api/hooks/use-game-formats';
 import { useRoster } from '@/api/hooks/use-rosters';
-import { useMatchPlans } from '@/api/hooks/use-match-plans';
 import { useMatchPlansMultiple } from '@/api/hooks/use-match-plans-multiple';
 import { useSubEvents } from '@/api/hooks/use-sub-events';
 import SubEventPanel from '@/app/games/play/components/SubEventPanel';
+import MatchPlanEditor from '@/app/games/play/components/MatchPlanEditor';
 import { useTournaments } from '@/api/hooks/use-tournaments';
 import { v4 as uuidv4 } from 'uuid'
 import {
@@ -940,12 +940,11 @@ export default function GamePage() {
   const { data: match, isLoading: isMatchLoading } = useMatch(gameId);
   const { data: gameFormat, isLoading: isGameFormatLoading } = useGameFormat(match?.gameFormatId);
   const { data: roster, isLoading: isRosterLoading } = useRoster(match?.team1RosterId);
-  const { data: matchPlans, isLoading: areMatchPlansLoading } = useMatchPlans(gameId);
 
   const positions = gameFormat?.positions ?? [];
   const players = roster?.players ?? [];
 
-  const isLoading = isMatchLoading || isGameFormatLoading || isRosterLoading || areMatchPlansLoading;
+  const isLoading = isMatchLoading || isGameFormatLoading || isRosterLoading;
 
   if (isLoading) {
     return (
@@ -976,7 +975,7 @@ export default function GamePage() {
     );
   }
 
-  if (!match || !gameFormat || !matchPlans) {
+  if (!match || !gameFormat) {
     return (
       <div className="container mx-auto py-8 px-4 max-w-xl">
         <Alert variant="destructive">
@@ -1013,7 +1012,7 @@ export default function GamePage() {
           <LiveGameTracker match={match} gameFormat={gameFormat} positions={positions} players={players} />
         </TabsContent>
         <TabsContent value="plan">
-          <MatchPlanner match={match} gameFormat={gameFormat} positions={positions} players={players} matchPlans={matchPlans} />
+          <MatchPlanEditor match={match} gameFormat={gameFormat} positions={positions} players={players} />
         </TabsContent>
 
       </Tabs>

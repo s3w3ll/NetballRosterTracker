@@ -8,7 +8,12 @@ import { useRoster } from '@/api/hooks/use-rosters';
 import { useMatchPlans } from '@/api/hooks/use-match-plans';
 import { useMatchPlansMultiple } from '@/api/hooks/use-match-plans-multiple';
 import { useTournaments } from '@/api/hooks/use-tournaments';
-import { upsertMatchPlanNonBlocking } from '@/firebase/non-blocking-updates';
+import { v4 as uuidv4 } from 'uuid'
+import {
+  upsertMatchPlanNonBlocking,
+  createSubEventNonBlocking,
+  bulkCreateSubEventsNonBlocking,
+} from '@/firebase/non-blocking-updates';
 import {
   Table,
   TableBody,
@@ -74,6 +79,9 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 
   const lastUpdateTime = useRef<number | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const { getIdToken } = useFirebase()
+  const initialLineupStamped = useRef(false)
 
   const onCourtPlayerIds = useMemo(() => Object.values(courtPositions).filter(Boolean) as string[], [courtPositions]);
 
@@ -167,6 +175,27 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
     };
   }, [isActive, updatePlayerTimes]);
 
+  useEffect(() => {
+    if (initialLineupStamped.current) return
+    const hasPlayers = Object.values(courtPositions).some(Boolean)
+    if (!hasPlayers) return
+
+    initialLineupStamped.current = true
+    const startingEvents = Object.entries(courtPositions)
+      .filter(([, playerId]) => playerId !== null)
+      .map(([positionAbbr, playerId]) => ({
+        id: uuidv4(),
+        period: 1,
+        secondsElapsed: 0,
+        playerId: playerId!,
+        positionAbbr,
+      }))
+
+    if (startingEvents.length > 0) {
+      bulkCreateSubEventsNonBlocking(match.id, startingEvents, getIdToken)
+    }
+  }, [courtPositions, match.id, getIdToken])
+
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.floor(seconds % 60);
@@ -180,12 +209,27 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   };
 
   const advancePeriod = () => {
-    if (!gameFormat || currentPeriod >= gameFormat.numberOfPeriods) return;
-    if (isActive) setIsActive(false);
-    setCurrentPeriod(prev => prev + 1);
-    setTime(gameFormat.periodDuration * 60);
-    lastUpdateTime.current = null;
-  };
+    if (!gameFormat || currentPeriod >= gameFormat.numberOfPeriods) return
+    if (isActive) setIsActive(false)
+
+    const nextPeriod = currentPeriod + 1
+
+    const startingLineupEvents = Object.entries(courtPositions)
+      .filter(([, playerId]) => playerId !== null)
+      .map(([positionAbbr, playerId]) => ({
+        id: uuidv4(),
+        period: nextPeriod,
+        secondsElapsed: 0,
+        playerId: playerId!,
+        positionAbbr,
+      }))
+
+    bulkCreateSubEventsNonBlocking(match.id, startingLineupEvents, getIdToken)
+
+    setCurrentPeriod(nextPeriod)
+    setTime(gameFormat.periodDuration * 60)
+    lastUpdateTime.current = null
+  }
 
   const handleTimerClick = () => {
     if (isActive) setIsActive(false)
@@ -214,34 +258,75 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   const handleDragEnd = () => setIsDragging(false);
 
   const handleDrop = (e: DragEvent<HTMLDivElement>, positionAbbr: string) => {
-      e.preventDefault();
-      const playerId = e.dataTransfer.getData("playerId");
-      if (!playerId) return;
-      updatePlayerTimes();
-      setCourtPositions(prev => {
-          const newPositions = { ...prev };
-          const currentOccupantId = newPositions[positionAbbr];
-          const oldPosOfDraggedPlayer = Object.keys(newPositions).find(p => newPositions[p] === playerId);
-          if (oldPosOfDraggedPlayer) {
-              newPositions[oldPosOfDraggedPlayer] = currentOccupantId;
-          }
-          newPositions[positionAbbr] = playerId;
-          return newPositions;
-      });
-  };
+    e.preventDefault()
+    const playerId = e.dataTransfer.getData('playerId')
+    if (!playerId) return
+
+    updatePlayerTimes()
+
+    const secondsElapsed = gameFormat
+      ? gameFormat.periodDuration * 60 - time
+      : 0
+
+    setCourtPositions(prev => {
+      const newPositions = { ...prev }
+      const currentOccupantId = newPositions[positionAbbr]
+      const oldPosOfDraggedPlayer = Object.keys(newPositions).find(p => newPositions[p] === playerId)
+
+      if (oldPosOfDraggedPlayer) {
+        newPositions[oldPosOfDraggedPlayer] = currentOccupantId
+        if (currentOccupantId) {
+          createSubEventNonBlocking(match.id, {
+            id: uuidv4(),
+            period: currentPeriod,
+            secondsElapsed,
+            playerId: currentOccupantId,
+            positionAbbr: oldPosOfDraggedPlayer,
+          }, getIdToken)
+        }
+      }
+
+      newPositions[positionAbbr] = playerId
+
+      createSubEventNonBlocking(match.id, {
+        id: uuidv4(),
+        period: currentPeriod,
+        secondsElapsed,
+        playerId,
+        positionAbbr,
+      }, getIdToken)
+
+      return newPositions
+    })
+  }
 
   const handleBenchDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const playerId = e.dataTransfer.getData("playerId");
-    if (!playerId) return;
-    updatePlayerTimes();
+    e.preventDefault()
+    const playerId = e.dataTransfer.getData('playerId')
+    if (!playerId) return
+
+    updatePlayerTimes()
+
+    const secondsElapsed = gameFormat
+      ? gameFormat.periodDuration * 60 - time
+      : 0
+
     setCourtPositions(prev => {
-        const newPositions = { ...prev };
-        const oldPosOfDraggedPlayer = Object.keys(newPositions).find(p => newPositions[p] === playerId);
-        if (oldPosOfDraggedPlayer) newPositions[oldPosOfDraggedPlayer] = null;
-        return newPositions;
-    });
-  };
+      const newPositions = { ...prev }
+      const oldPosOfDraggedPlayer = Object.keys(newPositions).find(p => newPositions[p] === playerId)
+      if (oldPosOfDraggedPlayer) {
+        newPositions[oldPosOfDraggedPlayer] = null
+        createSubEventNonBlocking(match.id, {
+          id: uuidv4(),
+          period: currentPeriod,
+          secondsElapsed,
+          playerId,
+          positionAbbr: null,
+        }, getIdToken)
+      }
+      return newPositions
+    })
+  }
 
   const allowDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();

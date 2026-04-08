@@ -78,6 +78,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   const [isEditingTimer, setIsEditingTimer] = useState(false)
   const [timerInputValue, setTimerInputValue] = useState('')
   const [isMobile, setIsMobile] = useState(false)
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
 
   const lastUpdateTime = useRef<number | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -260,6 +261,54 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
     setIsEditingTimer(false)
   }
 
+  const handleCourtTap = (positionAbbr: string) => {
+    const occupantId = courtPositions[positionAbbr]
+
+    // No player in hand — select the occupant (if any)
+    if (!selectedPlayerId) {
+      if (occupantId) setSelectedPlayerId(occupantId)
+      return
+    }
+
+    // Tapping the selected player's own position — deselect
+    if (occupantId === selectedPlayerId) {
+      setSelectedPlayerId(null)
+      return
+    }
+
+    // Place or swap
+    updatePlayerTimes()
+    const secondsElapsed = gameFormat ? gameFormat.periodDuration * 60 - time : 0
+    const captured = selectedPlayerId
+
+    setCourtPositions(prev => {
+      const newPositions = { ...prev }
+      const oldPosOfSelected = Object.keys(newPositions).find(p => newPositions[p] === captured)
+
+      // If selected player was on court, move the occupant to their old position
+      if (oldPosOfSelected) {
+        newPositions[oldPosOfSelected] = occupantId ?? null
+        if (occupantId) {
+          createSubEventNonBlocking(match.id, {
+            id: uuidv4(), period: currentPeriod, secondsElapsed,
+            playerId: occupantId, positionAbbr: oldPosOfSelected,
+          }, getIdToken)
+        }
+      }
+
+      // Place selected player at tapped position
+      newPositions[positionAbbr] = captured
+      createSubEventNonBlocking(match.id, {
+        id: uuidv4(), period: currentPeriod, secondsElapsed,
+        playerId: captured, positionAbbr,
+      }, getIdToken)
+
+      return newPositions
+    })
+
+    setSelectedPlayerId(null)
+  }
+
   const handleDragStart = (e: DragEvent<HTMLDivElement>, playerId: string) => {
     e.dataTransfer.setData("playerId", playerId);
     e.dataTransfer.effectAllowed = 'move';
@@ -337,6 +386,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
       }
       return newPositions
     })
+    setSelectedPlayerId(null)
   }
 
   const allowDrop = (e: DragEvent<HTMLDivElement>) => {
@@ -480,6 +530,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                       onDragEnd={handleDragEnd}
                       onDrop={(e) => handleDrop(e, position.abbreviation)}
                       onDragOver={allowDrop}
+                      onClick={() => handleCourtTap(position.abbreviation)}
                       style={{
                         position: 'absolute',
                         left: `${slot.x}%`,
@@ -489,12 +540,14 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                         height: isMobile ? '52px' : '70px',
                       }}
                       className={cn(
-                        "rounded-full border-2 flex flex-col items-center justify-center text-center transition-all duration-150 z-10 select-none px-3",
-                        player
-                          ? "border-primary bg-primary text-primary-foreground shadow-lg cursor-grab active:cursor-grabbing"
-                          : isDragging
-                            ? "border-yellow-300/70 bg-black/40 border-dashed"
-                            : "border-white/50 bg-black/25 border-dashed"
+                        "rounded-full border-2 flex flex-col items-center justify-center text-center transition-all duration-150 z-10 select-none px-3 cursor-pointer",
+                        player && player.id === selectedPlayerId
+                          ? "border-yellow-400 ring-2 ring-yellow-400 bg-primary text-primary-foreground shadow-lg"
+                          : player
+                            ? "border-primary bg-primary text-primary-foreground shadow-lg cursor-grab active:cursor-grabbing"
+                            : (isDragging || selectedPlayerId)
+                              ? "border-yellow-300/70 bg-black/40 border-dashed"
+                              : "border-white/50 bg-black/25 border-dashed"
                       )}
                     >
                       {player ? (
@@ -556,7 +609,13 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                 draggable
                 onDragStart={(e) => handleDragStart(e, player.id)}
                 onDragEnd={handleDragEnd}
-                className="flex-shrink-0 px-3 py-2 rounded-lg border bg-card cursor-grab text-center min-w-[72px]"
+                onClick={() => setSelectedPlayerId(prev => prev === player.id ? null : player.id)}
+                className={cn(
+                  "flex-shrink-0 px-3 py-2 rounded-lg border cursor-pointer text-center min-w-[72px] transition-all",
+                  selectedPlayerId === player.id
+                    ? "border-yellow-400 ring-2 ring-yellow-400 bg-yellow-400/10"
+                    : "border-border bg-card"
+                )}
               >
                 <div className="text-sm font-bold">{player.name.split(' ')[0]}</div>
                 <div className="text-xs font-mono text-muted-foreground">{formatTime(playerTimeOnCourt[player.id] || 0)}</div>

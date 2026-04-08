@@ -397,10 +397,10 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
             {formatTime(time)}
           </span>
         )}
-        <Button size="sm" variant="outline" onClick={toggleTimer} className="h-7 px-2">
+        <Button size="sm" variant="outline" onClick={toggleTimer} className="h-7 px-2" aria-label={isActive ? 'Pause timer' : 'Start timer'}>
           {isActive ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
         </Button>
-        <Button size="sm" variant="ghost" onClick={resetTimer} className="h-7 px-2">
+        <Button size="sm" variant="ghost" onClick={resetTimer} className="h-7 px-2" aria-label="Reset timer">
           <RefreshCw className="h-3 w-3" />
         </Button>
       </div>
@@ -412,6 +412,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
           onClick={advancePeriod}
           disabled={currentPeriod >= (gameFormat?.numberOfPeriods || 4)}
           className="h-7 px-2"
+          aria-label="Advance to next period"
         >
           <ArrowRight className="h-3 w-3" />
         </Button>
@@ -544,7 +545,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
       </div>
 
       {/* ── Mobile bench strip (hidden on md+) ──────────────── */}
-      <div className="flex md:hidden w-full rounded-lg border bg-card px-3 py-2">
+      <div className="flex md:hidden w-full rounded-lg border bg-card px-3 py-2" onDrop={handleBenchDrop} onDragOver={allowDrop}>
         <div className="flex gap-2 overflow-x-auto w-full py-1 items-center">
           {benchedPlayers.length === 0 ? (
             <p className="text-xs text-muted-foreground self-center w-full text-center py-2">All players on court</p>

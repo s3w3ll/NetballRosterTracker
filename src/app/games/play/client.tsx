@@ -82,6 +82,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 
   const lastUpdateTime = useRef<number | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const dragJustFinished = useRef(false)
 
   const { getIdToken } = useFirebase()
   const initialLineupStamped = useRef(false)
@@ -262,6 +263,10 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   }
 
   const handleCourtTap = (positionAbbr: string) => {
+    if (dragJustFinished.current) {
+      dragJustFinished.current = false
+      return
+    }
     const occupantId = courtPositions[positionAbbr]
 
     // No player in hand — select the occupant (if any)
@@ -315,7 +320,10 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
     setIsDragging(true);
   };
 
-  const handleDragEnd = () => setIsDragging(false);
+  const handleDragEnd = () => {
+    setIsDragging(false)
+    dragJustFinished.current = true
+  };
 
   const handleDrop = (e: DragEvent<HTMLDivElement>, positionAbbr: string) => {
     e.preventDefault()
@@ -609,7 +617,10 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                 draggable
                 onDragStart={(e) => handleDragStart(e, player.id)}
                 onDragEnd={handleDragEnd}
-                onClick={() => setSelectedPlayerId(prev => prev === player.id ? null : player.id)}
+                onClick={() => {
+                  if (dragJustFinished.current) { dragJustFinished.current = false; return }
+                  setSelectedPlayerId(prev => prev === player.id ? null : player.id)
+                }}
                 className={cn(
                   "flex-shrink-0 px-3 py-2 rounded-lg border cursor-pointer text-center min-w-[72px] transition-all",
                   selectedPlayerId === player.id

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useSubEvents } from '@/api/hooks/use-sub-events'
 import SubEventPanel from './SubEventPanel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -29,6 +29,7 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
   const [activePeriod, setActivePeriod] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
+  const dragJustFinished = useRef(false)
 
   const periods = Array.from({ length: gameFormat?.numberOfPeriods ?? 4 }, (_, i) => i + 1)
 
@@ -83,6 +84,7 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
       ev => ev.period === activePeriod && ev.secondsElapsed === 0 && ev.playerId === playerId
     )
     if (existing) remove(existing.id)
+    setSelectedPlayerId(null)
   }
 
   const copyFromPrevious = () => {
@@ -105,6 +107,10 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
   }
 
   const handleCourtTap = (positionAbbr: string) => {
+    if (dragJustFinished.current) {
+      dragJustFinished.current = false
+      return
+    }
     if (!subEvents) return
     const occupantId = currentLineup[positionAbbr]
 
@@ -203,7 +209,7 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
                               key={position.id}
                               draggable={!!player}
                               onDragStart={player ? e => { e.dataTransfer.setData('playerId', player.id); setIsDragging(true) } : undefined}
-                              onDragEnd={() => setIsDragging(false)}
+                              onDragEnd={() => { setIsDragging(false); dragJustFinished.current = true }}
                               onDrop={e => handleDrop(e, position.abbreviation)}
                               onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
                               onClick={() => handleCourtTap(position.abbreviation)}
@@ -265,7 +271,7 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
                                 <span
                                   draggable
                                   onDragStart={e => { e.dataTransfer.setData('playerId', player.id); setIsDragging(true) }}
-                                  onDragEnd={() => setIsDragging(false)}
+                                  onDragEnd={() => { setIsDragging(false); dragJustFinished.current = true }}
                                   className="text-sm cursor-grab"
                                 >
                                   {player.name}
@@ -298,8 +304,11 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
                         key={player.id}
                         draggable
                         onDragStart={e => { e.dataTransfer.setData('playerId', player.id); setIsDragging(true) }}
-                        onDragEnd={() => setIsDragging(false)}
-                        onClick={() => setSelectedPlayerId(prev => prev === player.id ? null : player.id)}
+                        onDragEnd={() => { setIsDragging(false); dragJustFinished.current = true }}
+                        onClick={() => {
+                          if (dragJustFinished.current) { dragJustFinished.current = false; return }
+                          setSelectedPlayerId(prev => prev === player.id ? null : player.id)
+                        }}
                         className={cn(
                           'text-sm py-1 px-2 rounded cursor-pointer hover:bg-muted transition-all',
                           selectedPlayerId === player.id && 'ring-2 ring-yellow-400 bg-yellow-400/10'

@@ -28,6 +28,7 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
   const { data: subEvents, isLoading, create, update, remove, bulkCreate } = useSubEvents(match.id)
   const [activePeriod, setActivePeriod] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
 
   const periods = Array.from({ length: gameFormat?.numberOfPeriods ?? 4 }, (_, i) => i + 1)
 
@@ -103,6 +104,46 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
     })
   }
 
+  const handleCourtTap = (positionAbbr: string) => {
+    if (!subEvents) return
+    const occupantId = currentLineup[positionAbbr]
+
+    // No player in hand — select the occupant (if any)
+    if (!selectedPlayerId) {
+      if (occupantId) setSelectedPlayerId(occupantId)
+      return
+    }
+
+    // Tapping selected player's own position — deselect
+    if (occupantId === selectedPlayerId) {
+      setSelectedPlayerId(null)
+      return
+    }
+
+    const captured = selectedPlayerId
+    setSelectedPlayerId(null)
+
+    // Find old position of selected player (if on court)
+    const selectedPlayerOldPos = Object.entries(currentLineup).find(([, id]) => id === captured)?.[0]
+
+    // Remove existing starting-lineup events for both players in this period
+    const toRemove = subEvents.filter(
+      ev => ev.period === activePeriod && ev.secondsElapsed === 0 &&
+        (ev.playerId === captured || ev.playerId === occupantId)
+    )
+
+    Promise.all(toRemove.map(ev => remove(ev.id))).then(() => {
+      const creates: Promise<string | undefined>[] = []
+      // Place selected player at tapped position
+      creates.push(create({ period: activePeriod, secondsElapsed: 0, playerId: captured, positionAbbr }))
+      // If occupant existed and selected player had an old position, swap occupant there
+      if (occupantId && selectedPlayerOldPos) {
+        creates.push(create({ period: activePeriod, secondsElapsed: 0, playerId: occupantId, positionAbbr: selectedPlayerOldPos }))
+      }
+      return Promise.all(creates)
+    })
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -165,6 +206,7 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
                               onDragEnd={() => setIsDragging(false)}
                               onDrop={e => handleDrop(e, position.abbreviation)}
                               onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+                              onClick={() => handleCourtTap(position.abbreviation)}
                               style={{
                                 position: 'absolute',
                                 left: `${slot.x}%`,
@@ -174,12 +216,14 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
                                 height: '56px',
                               }}
                               className={cn(
-                                'rounded-full border-2 flex flex-col items-center justify-center text-center transition-all z-10 select-none px-2',
-                                player
-                                  ? 'border-primary bg-primary text-primary-foreground shadow-lg cursor-grab'
-                                  : isDragging
-                                    ? 'border-yellow-300/70 bg-black/40 border-dashed'
-                                    : 'border-white/50 bg-black/25 border-dashed'
+                                'rounded-full border-2 flex flex-col items-center justify-center text-center transition-all z-10 select-none px-2 cursor-pointer',
+                                player && player.id === selectedPlayerId
+                                  ? 'border-yellow-400 ring-2 ring-yellow-400 bg-primary text-primary-foreground shadow-lg'
+                                  : player
+                                    ? 'border-primary bg-primary text-primary-foreground shadow-lg cursor-grab'
+                                    : (isDragging || selectedPlayerId)
+                                      ? 'border-yellow-300/70 bg-black/40 border-dashed'
+                                      : 'border-white/50 bg-black/25 border-dashed'
                               )}
                             >
                               {player ? (
@@ -206,9 +250,14 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
                               key={position.id}
                               onDrop={e => handleDrop(e, position.abbreviation)}
                               onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+                              onClick={() => handleCourtTap(position.abbreviation)}
                               className={cn(
-                                'p-3 rounded-lg border-2 border-dashed flex items-center gap-2 min-h-[60px]',
-                                player ? 'border-primary bg-primary/10' : 'border-muted-foreground/40'
+                                'p-3 rounded-lg border-2 border-dashed flex items-center gap-2 min-h-[60px] cursor-pointer',
+                                player && player.id === selectedPlayerId
+                                  ? 'border-yellow-400 ring-2 ring-yellow-400 bg-yellow-400/5'
+                                  : player
+                                    ? 'border-primary bg-primary/10'
+                                    : 'border-muted-foreground/40'
                               )}
                             >
                               <span className="font-bold text-xs text-primary w-8">{position.abbreviation}</span>
@@ -250,7 +299,11 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players 
                         draggable
                         onDragStart={e => { e.dataTransfer.setData('playerId', player.id); setIsDragging(true) }}
                         onDragEnd={() => setIsDragging(false)}
-                        className="text-sm py-1 px-2 rounded cursor-grab hover:bg-muted"
+                        onClick={() => setSelectedPlayerId(prev => prev === player.id ? null : player.id)}
+                        className={cn(
+                          'text-sm py-1 px-2 rounded cursor-pointer hover:bg-muted transition-all',
+                          selectedPlayerId === player.id && 'ring-2 ring-yellow-400 bg-yellow-400/10'
+                        )}
                       >
                         {player.name}
                       </div>

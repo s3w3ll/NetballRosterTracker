@@ -423,11 +423,11 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
       {/* ── Court (left, 60% of page width) ────────────────────── */}
       <div className="w-full md:w-[60%] flex-shrink-0 min-w-0">
         <Card className="bg-primary/5">
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 hidden md:block">
             <CardTitle>Court</CardTitle>
             <CardDescription>Drag players onto the court.</CardDescription>
           </CardHeader>
-          <CardContent className={cn(useCourtLayout ? "flex justify-center pb-4" : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4")}>
+          <CardContent className={cn(useCourtLayout ? "p-2 md:p-6 flex justify-center pb-2 md:pb-4" : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4")}>
             {useCourtLayout ? (
               /* SVG netball court for 7-aside — scales to container, attack end at top */
               <div className="relative rounded-lg overflow-hidden w-full" style={{ aspectRatio: '2/3' }}>
@@ -485,8 +485,8 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                         left: `${slot.x}%`,
                         top: `${slot.y}%`,
                         transform: 'translate(-50%, -50%)',
-                        width: '190px',
-                        height: '70px',
+                        width: isMobile ? '110px' : '190px',
+                        height: isMobile ? '52px' : '70px',
                       }}
                       className={cn(
                         "rounded-full border-2 flex flex-col items-center justify-center text-center transition-all duration-150 z-10 select-none px-3",

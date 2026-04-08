@@ -77,6 +77,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   const [isDragging, setIsDragging] = useState(false);
   const [isEditingTimer, setIsEditingTimer] = useState(false)
   const [timerInputValue, setTimerInputValue] = useState('')
+  const [isMobile, setIsMobile] = useState(false)
 
   const lastUpdateTime = useRef<number | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -198,6 +199,13 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
       bulkCreateSubEventsNonBlocking(match.id, startingEvents, getIdToken)
     }
   }, [courtPositions, match.id, getIdToken])
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
@@ -367,10 +375,52 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 
   return (
     <>
+    {/* ── Mobile top bar: clock + period controls (hidden on md+) ── */}
+    <div className="flex md:hidden items-center justify-between gap-2 p-3 mb-3 rounded-lg border bg-card">
+      <div className="flex items-center gap-1">
+        {isEditingTimer ? (
+          <input
+            type="text"
+            className="text-xl font-bold font-mono w-20 bg-transparent border-b-2 border-primary focus:outline-none"
+            value={timerInputValue}
+            onChange={e => setTimerInputValue(e.target.value)}
+            onBlur={handleTimerInputConfirm}
+            onKeyDown={e => { if (e.key === 'Enter') handleTimerInputConfirm() }}
+            autoFocus
+          />
+        ) : (
+          <span
+            className="text-xl font-bold font-mono cursor-pointer hover:text-primary transition-colors"
+            title="Tap to correct timer"
+            onClick={handleTimerClick}
+          >
+            {formatTime(time)}
+          </span>
+        )}
+        <Button size="sm" variant="outline" onClick={toggleTimer} className="h-7 px-2">
+          {isActive ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={resetTimer} className="h-7 px-2">
+          <RefreshCw className="h-3 w-3" />
+        </Button>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold whitespace-nowrap">Q{currentPeriod}/{gameFormat?.numberOfPeriods}</span>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={advancePeriod}
+          disabled={currentPeriod >= (gameFormat?.numberOfPeriods || 4)}
+          className="h-7 px-2"
+        >
+          <ArrowRight className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
     <div className="flex flex-col md:flex-row gap-6 items-start">
 
       {/* ── Court (left, 60% of page width) ────────────────────── */}
-      <div className="w-[60%] flex-shrink-0 min-w-0">
+      <div className="w-full md:w-[60%] flex-shrink-0 min-w-0">
         <Card className="bg-primary/5">
           <CardHeader className="pb-2">
             <CardTitle>Court</CardTitle>
@@ -493,8 +543,30 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
         </Card>
       </div>
 
+      {/* ── Mobile bench strip (hidden on md+) ──────────────── */}
+      <div className="flex md:hidden w-full rounded-lg border bg-card px-3 py-2">
+        <div className="flex gap-2 overflow-x-auto w-full py-1 items-center">
+          {benchedPlayers.length === 0 ? (
+            <p className="text-xs text-muted-foreground self-center w-full text-center py-2">All players on court</p>
+          ) : (
+            benchedPlayers.map(player => (
+              <div
+                key={player.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, player.id)}
+                onDragEnd={handleDragEnd}
+                className="flex-shrink-0 px-3 py-2 rounded-lg border bg-card cursor-grab text-center min-w-[72px]"
+              >
+                <div className="text-sm font-bold">{player.name.split(' ')[0]}</div>
+                <div className="text-xs font-mono text-muted-foreground">{formatTime(playerTimeOnCourt[player.id] || 0)}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
       {/* ── Right column: clock → period → bench ───────────────── */}
-      <div className="flex flex-col gap-4 flex-1 min-w-0">
+      <div className="hidden md:flex flex-col gap-4 flex-1 min-w-0">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Game Clock</CardTitle>

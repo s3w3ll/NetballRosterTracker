@@ -119,7 +119,7 @@ export function normalizeMatchPlan(raw: any): MatchPlan {
     id: raw.id,
     matchId: raw.match_id,
     quarter: raw.quarter,
-    playerPositions: raw.playerPositions ?? [],
+    playerPositions: raw.playerPositions ?? JSON.parse(raw.player_positions ?? '[]'),
   }
 }
 

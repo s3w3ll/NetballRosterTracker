@@ -7,6 +7,7 @@ import gameFormats from './routes/game-formats'
 import positions from './routes/positions'
 import matches from './routes/matches'
 import subEvents from './routes/sub-events'
+import matchPlans from './routes/match-plans'
 import tournaments from './routes/tournaments'
 import migrate from './routes/migrate'
 
@@ -49,6 +50,7 @@ app.route('/api/game-formats', gameFormats)
 app.route('/api/positions', positions)
 app.route('/api/matches', matches)
 app.route('/api/matches/:matchId/sub-events', subEvents)
+app.route('/api/matches/:matchId/plans', matchPlans)
 app.route('/api/tournaments', tournaments)
 
 // Mounted OUTSIDE /api/* so it bypasses the auth middleware

@@ -1,5 +1,7 @@
 import { Hono } from 'hono'
+import { v4 as uuidv4 } from 'uuid'
 import type { Env, Variables } from '../index'
+import { generateTournamentPlans } from '../lib/scheduler'
 
 const tournaments = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -77,6 +79,72 @@ tournaments.delete('/:id/matches/:matchId', async (c) => {
     'DELETE FROM tournament_matches WHERE tournament_id = ? AND match_id = ?'
   ).bind(tournamentId, matchId).run()
   return c.json({ tournamentId, matchId })
+})
+
+// POST /api/tournaments/:id/generate
+tournaments.post('/:id/generate', async (c) => {
+  const userId = c.get('userId')
+  const { id: tournamentId } = c.req.param()
+  const body = await c.req.json<{
+    rosterId: string
+    gameFormatId: string
+    numberOfGames: number
+  }>()
+
+  // Verify tournament ownership
+  const tournament = await c.env.DB.prepare(
+    'SELECT id FROM tournaments WHERE id = ? AND user_id = ?'
+  ).bind(tournamentId, userId).first()
+  if (!tournament) return c.json({ error: 'Not found' }, 404)
+
+  // Fetch players for the roster
+  const playersResult = await c.env.DB.prepare(
+    'SELECT id FROM players WHERE roster_id = ?'
+  ).bind(body.rosterId).all()
+  const players = playersResult.results as Array<{ id: string }>
+
+  // Fetch game format (to get number_of_periods)
+  const gameFormat = await c.env.DB.prepare(
+    'SELECT number_of_periods FROM game_formats WHERE id = ? AND user_id = ?'
+  ).bind(body.gameFormatId, userId).first() as { number_of_periods: number } | null
+  if (!gameFormat) return c.json({ error: 'Game format not found' }, 404)
+
+  // Fetch positions for the game format (ordered by rowid to preserve display order)
+  const positionsResult = await c.env.DB.prepare(
+    'SELECT abbreviation, position_group FROM positions WHERE game_format_id = ? ORDER BY rowid'
+  ).bind(body.gameFormatId).all()
+  const positions = (positionsResult.results as Array<{ abbreviation: string; position_group: string | null }>)
+    .map(p => ({ abbreviation: p.abbreviation, positionGroup: p.position_group }))
+
+  // Generate all period plans via greedy scheduler
+  const plans = generateTournamentPlans(players, positions, gameFormat.number_of_periods, body.numberOfGames)
+
+  // Pre-generate all match IDs
+  const matchIds: string[] = Array.from({ length: body.numberOfGames }, () => uuidv4())
+  const now = new Date().toISOString()
+
+  // Build atomic batch: matches + tournament links + match plans
+  const stmts = [
+    ...matchIds.map((matchId, i) =>
+      c.env.DB.prepare(
+        'INSERT INTO matches (id, user_id, name, team1_roster_id, game_format_id, start_time) VALUES (?, ?, ?, ?, ?, ?)'
+      ).bind(matchId, userId, `Game ${i + 1}`, body.rosterId, body.gameFormatId, now)
+    ),
+    ...matchIds.map((matchId) =>
+      c.env.DB.prepare(
+        'INSERT INTO tournament_matches (tournament_id, match_id) VALUES (?, ?)'
+      ).bind(tournamentId, matchId)
+    ),
+    ...plans.map((plan) =>
+      c.env.DB.prepare(
+        'INSERT INTO match_plans (id, match_id, user_id, quarter, player_positions) VALUES (?, ?, ?, ?, ?)'
+      ).bind(uuidv4(), matchIds[plan.matchIndex], userId, plan.quarter, JSON.stringify(plan.playerPositions))
+    ),
+  ]
+
+  await c.env.DB.batch(stmts)
+
+  return c.json({ matchIds }, 201)
 })
 
 export default tournaments

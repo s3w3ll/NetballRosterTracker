@@ -40,8 +40,8 @@ export default function NewTournamentPage() {
   const { getIdToken } = useFirebase();
   const router = useRouter();
   const { toast } = useToast();
-  const { data: rosters } = useRosters();
-  const { data: gameFormats } = useGameFormats();
+  const { data: rosters, isLoading: areRostersLoading } = useRosters();
+  const { data: gameFormats, isLoading: areFormatsLoading } = useGameFormats();
 
   const form = useForm<TournamentFormData>({
     resolver: zodResolver(tournamentSchema),
@@ -62,18 +62,27 @@ export default function NewTournamentPage() {
 
       const n = data.numberOfGames ? parseInt(data.numberOfGames, 10) : NaN;
       if (!isNaN(n) && n > 0 && data.rosterId && data.gameFormatId) {
-        await apiJSON(`/api/tournaments/${tournamentId}/generate`, getIdToken, {
-          method: 'POST',
-          body: JSON.stringify({
-            rosterId: data.rosterId,
-            gameFormatId: data.gameFormatId,
-            numberOfGames: n,
-          }),
-        });
-        toast({
-          title: "Tournament Generated",
-          description: `"${data.name}" created with ${n} games and balanced match plans.`,
-        });
+        try {
+          await apiJSON(`/api/tournaments/${tournamentId}/generate`, getIdToken, {
+            method: 'POST',
+            body: JSON.stringify({
+              rosterId: data.rosterId,
+              gameFormatId: data.gameFormatId,
+              numberOfGames: n,
+            }),
+          });
+          toast({
+            title: "Tournament Generated",
+            description: `"${data.name}" created with ${n} games and balanced match plans.`,
+          });
+        } catch (generateError: any) {
+          console.error("Error generating tournament games:", generateError);
+          toast({
+            variant: "destructive",
+            title: "Games could not be generated",
+            description: `The tournament was created, but game generation failed: ${generateError.message || "Unknown error"}. You can add games manually.`,
+          });
+        }
         setNavId('tournamentId', tournamentId);
         router.push('/tournaments/view');
       } else {
@@ -85,6 +94,7 @@ export default function NewTournamentPage() {
         router.push('/tournaments/add-match');
       }
     } catch (e: any) {
+      console.error("Error creating tournament:", e);
       toast({
         variant: "destructive",
         title: "Uh oh! Something went wrong.",
@@ -131,6 +141,7 @@ export default function NewTournamentPage() {
                           type="number"
                           min={1}
                           max={20}
+                          step={1}
                           placeholder="Leave blank to add games manually"
                           {...field}
                         />
@@ -150,7 +161,7 @@ export default function NewTournamentPage() {
                           <FormLabel>Roster</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
-                              <SelectTrigger>
+                              <SelectTrigger disabled={areRostersLoading}>
                                 <SelectValue placeholder="Select a roster..." />
                               </SelectTrigger>
                             </FormControl>
@@ -173,7 +184,7 @@ export default function NewTournamentPage() {
                           <FormLabel>Game Format</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
-                              <SelectTrigger>
+                              <SelectTrigger disabled={areFormatsLoading}>
                                 <SelectValue placeholder="Select a game format..." />
                               </SelectTrigger>
                             </FormControl>

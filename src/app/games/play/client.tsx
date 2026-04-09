@@ -72,8 +72,15 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   const [time, setTime] = useState(0);
   const [currentPeriod, setCurrentPeriod] = useState(1);
 
-  const [playerTimeOnCourt, setPlayerTimeOnCourt] = useState<Record<string, number>>({});
   const [playerTimeInPosition, setPlayerTimeInPosition] = useState<Record<string, Record<string, number>>>({});
+  // Derived from playerTimeInPosition — avoids a second setState and the extra render it causes.
+  const playerTimeOnCourt = useMemo(() => {
+    const totals: Record<string, number> = {};
+    Object.entries(playerTimeInPosition).forEach(([playerId, positions]) => {
+      totals[playerId] = Object.values(positions).reduce((sum: number, t: any) => sum + t, 0);
+    });
+    return totals;
+  }, [playerTimeInPosition]);
   const [isDragging, setIsDragging] = useState(false);
   const [isEditingTimer, setIsEditingTimer] = useState(false)
   const [timerInputValue, setTimerInputValue] = useState('')
@@ -111,15 +118,6 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
                 newPosTimes[playerId][posAbbr] = (newPosTimes[playerId][posAbbr] || 0) + timeElapsedSeconds;
             }
         });
-
-        setPlayerTimeOnCourt(currentCourtTimes => {
-            const newCourtTimes = { ...currentCourtTimes };
-            Object.keys(newPosTimes).forEach(playerId => {
-                newCourtTimes[playerId] = Object.values(newPosTimes[playerId]).reduce((sum: number, time: any) => sum + time, 0);
-            });
-            return newCourtTimes;
-        });
-
         return newPosTimes;
     });
 }, [courtPositions, isActive]);
@@ -127,12 +125,10 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 
   useEffect(() => {
     if (players && positions) {
-      const initialTimeOnCourt = players.reduce((acc, player) => ({ ...acc, [player.id]: 0 }), {});
       const initialTimeInPosition = players.reduce((acc, player) => ({
         ...acc,
         [player.id]: positions.reduce((posAcc, pos) => ({ ...posAcc, [pos.abbreviation]: 0 }), {})
       }), {});
-      setPlayerTimeOnCourt(initialTimeOnCourt);
       setPlayerTimeInPosition(initialTimeInPosition);
     }
   }, [players, positions]);

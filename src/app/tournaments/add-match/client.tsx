@@ -70,13 +70,6 @@ export default function AddMatchToTournamentPage() {
         }),
       });
 
-      for (let i = 1; i <= originalFormat.numberOfPeriods; i++) {
-        await apiJSON(`/api/matches/${matchId}/plans`, getIdToken, {
-          method: 'POST',
-          body: JSON.stringify({ id: uuidv4(), quarter: i, playerPositions: [] }),
-        });
-      }
-
       await apiJSON(`/api/tournaments/${tournament.id}/matches`, getIdToken, {
         method: 'POST',
         body: JSON.stringify({ matchId }),

@@ -6,6 +6,7 @@ import { useMatches } from '@/api/hooks/use-matches';
 import { useTournament } from '@/api/hooks/use-tournaments';
 import { useRoster } from '@/api/hooks/use-rosters';
 import { useGameFormats, useGameFormat } from '@/api/hooks/use-game-formats';
+import { useMatchPlansMultiple } from '@/api/hooks/use-match-plans-multiple';
 import { apiJSON } from '@/api/client';
 import { normalizeSubEvent } from '@/api/types';
 import { calculatePlayerTimes } from '@/lib/time-calculations';
@@ -31,6 +32,13 @@ type MatchTimeCalculations = Record<string, PlayerTimeInfo>;
 
 const formatTime = (seconds: number) => `${Math.floor(seconds / 60)}m`;
 
+function courtTimeColor(value: number, min: number, max: number): string {
+  if (max === min) return 'inherit'
+  const t = Math.max(0, Math.min(1, (value - min) / (max - min)))
+  const hue = t < 0.5 ? t * 2 * 45 : 45 + (t - 0.5) * 2 * 75
+  const sat = t < 0.5 ? 85 : 70
+  return `hsl(${Math.round(hue)}, ${sat}%, 40%)`
+}
 
 export default function TournamentViewPage() {
     const router = useRouter();
@@ -59,6 +67,7 @@ export default function TournamentViewPage() {
     const { data: roster, isLoading: isRosterLoading } = useRoster(rosterIds[0] ?? null);
     const { data: primaryGameFormat, isLoading: isFormatLoading } = useGameFormat(gameFormatIds[0] ?? null);
     const { data: allGameFormats, isLoading: areAllFormatsLoading } = useGameFormats();
+    const { data: allMatchPlans, isLoading: arePlansLoading } = useMatchPlansMultiple(tournament?.matchIds ?? []);
 
     const players = roster?.players ?? [];
     const positions = primaryGameFormat?.positions ?? [];
@@ -101,6 +110,31 @@ export default function TournamentViewPage() {
 
     }, [players, matches, allGameFormats, allSubEvents]);
 
+    // Total periods on court per player across all tournament match plans
+    const planPeriodCounts = useMemo(() => {
+      if (!allMatchPlans) return {} as Record<string, number>
+      const counts: Record<string, number> = {}
+      for (const plan of allMatchPlans) {
+        for (const pp of plan.playerPositions) {
+          counts[pp.playerId] = (counts[pp.playerId] ?? 0) + 1
+        }
+      }
+      return counts
+    }, [allMatchPlans])
+
+    // Periods on court per player per match, keyed by matchId then playerId
+    const planPeriodsByMatch = useMemo(() => {
+      if (!allMatchPlans) return {} as Record<string, Record<string, number>>
+      const result: Record<string, Record<string, number>> = {}
+      for (const plan of allMatchPlans) {
+        if (!result[plan.matchId]) result[plan.matchId] = {}
+        for (const pp of plan.playerPositions) {
+          result[plan.matchId][pp.playerId] = (result[plan.matchId][pp.playerId] ?? 0) + 1
+        }
+      }
+      return result
+    }, [allMatchPlans])
+
     const handleAddMatch = () => {
         router.push('/tournaments/add-match');
     };
@@ -110,7 +144,7 @@ export default function TournamentViewPage() {
         router.push('/games/play?mode=plan');
     };
 
-    const isLoading = isTournamentLoading || areMatchesLoading || isRosterLoading || isFormatLoading || areAllFormatsLoading || areSubEventsLoading;
+    const isLoading = isTournamentLoading || areMatchesLoading || isRosterLoading || isFormatLoading || areAllFormatsLoading || areSubEventsLoading || arePlansLoading;
 
     if (isLoading) {
         return (
@@ -177,15 +211,27 @@ export default function TournamentViewPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {players.map((player: any) => (
-                                <TableRow key={player.id}>
-                                    <TableCell className="font-medium">{player.name}</TableCell>
-                                    <TableCell className="text-right font-mono">{formatTime(tournamentTimeTotals[player.id]?.total || 0)}</TableCell>
-                                    {positions.map((p: any) => (
-                                         <TableCell key={p.id} className="text-right font-mono">{formatTime(tournamentTimeTotals[player.id]?.positions[p.abbreviation] || 0)}</TableCell>
-                                    ))}
-                                </TableRow>
-                            ))}
+                          {(() => {
+                            const planValues = players.map((p: any) => planPeriodCounts[p.id] ?? 0)
+                            const planMin = planValues.length ? Math.min(...planValues) : 0
+                            const planMax = planValues.length ? Math.max(...planValues) : 0
+                            return players.map((player: any) => (
+                              <TableRow key={player.id}>
+                                <TableCell className="font-medium">{player.name}</TableCell>
+                                <TableCell
+                                  className="text-right font-mono font-semibold"
+                                  style={{ color: courtTimeColor(planPeriodCounts[player.id] ?? 0, planMin, planMax) }}
+                                >
+                                  {formatTime(tournamentTimeTotals[player.id]?.total || 0)}
+                                </TableCell>
+                                {positions.map((p: any) => (
+                                  <TableCell key={p.id} className="text-right font-mono">
+                                    {formatTime(tournamentTimeTotals[player.id]?.positions[p.abbreviation] || 0)}
+                                  </TableCell>
+                                ))}
+                              </TableRow>
+                            ))
+                          })()}
                         </TableBody>
                     </Table>
                 </CardContent>
@@ -215,15 +261,27 @@ export default function TournamentViewPage() {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                         {players.map((player: any) => (
-                                            <TableRow key={player.id}>
-                                                <TableCell className="font-medium">{player.name}</TableCell>
-                                                <TableCell className="text-right font-mono">{formatTime(matchTimes[player.id]?.total || 0)}</TableCell>
-                                                {positions.map((p: any) => (
-                                                    <TableCell key={p.id} className="text-right font-mono">{formatTime(matchTimes[player.id]?.positions[p.abbreviation] || 0)}</TableCell>
-                                                ))}
-                                            </TableRow>
-                                        ))}
+                                      {(() => {
+                                        const matchPlanValues = players.map((p: any) => planPeriodsByMatch[match.id]?.[p.id] ?? 0)
+                                        const matchPlanMin = matchPlanValues.length ? Math.min(...matchPlanValues) : 0
+                                        const matchPlanMax = matchPlanValues.length ? Math.max(...matchPlanValues) : 0
+                                        return players.map((player: any) => (
+                                          <TableRow key={player.id}>
+                                            <TableCell className="font-medium">{player.name}</TableCell>
+                                            <TableCell
+                                              className="text-right font-mono font-semibold"
+                                              style={{ color: courtTimeColor(planPeriodsByMatch[match.id]?.[player.id] ?? 0, matchPlanMin, matchPlanMax) }}
+                                            >
+                                              {formatTime(matchTimes[player.id]?.total || 0)}
+                                            </TableCell>
+                                            {positions.map((p: any) => (
+                                              <TableCell key={p.id} className="text-right font-mono">
+                                                {formatTime(matchTimes[player.id]?.positions[p.abbreviation] || 0)}
+                                              </TableCell>
+                                            ))}
+                                          </TableRow>
+                                        ))
+                                      })()}
                                     </TableBody>
                                 </Table>
                             </CardContent>

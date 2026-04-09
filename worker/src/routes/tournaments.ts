@@ -91,16 +91,21 @@ tournaments.post('/:id/generate', async (c) => {
     numberOfGames: number
   }>()
 
+  const { numberOfGames } = body
+  if (!Number.isInteger(numberOfGames) || numberOfGames < 1 || numberOfGames > 20) {
+    return c.json({ error: 'numberOfGames must be an integer between 1 and 20' }, 400)
+  }
+
   // Verify tournament ownership
   const tournament = await c.env.DB.prepare(
     'SELECT id FROM tournaments WHERE id = ? AND user_id = ?'
   ).bind(tournamentId, userId).first()
   if (!tournament) return c.json({ error: 'Not found' }, 404)
 
-  // Fetch players for the roster
+  // Fetch players for the roster (with ownership check via roster join)
   const playersResult = await c.env.DB.prepare(
-    'SELECT id FROM players WHERE roster_id = ?'
-  ).bind(body.rosterId).all()
+    'SELECT p.id FROM players p INNER JOIN rosters r ON r.id = p.roster_id WHERE p.roster_id = ? AND r.user_id = ?'
+  ).bind(body.rosterId, userId).all()
   const players = playersResult.results as Array<{ id: string }>
 
   // Fetch game format (to get number_of_periods)
@@ -117,10 +122,10 @@ tournaments.post('/:id/generate', async (c) => {
     .map(p => ({ abbreviation: p.abbreviation, positionGroup: p.position_group }))
 
   // Generate all period plans via greedy scheduler
-  const plans = generateTournamentPlans(players, positions, gameFormat.number_of_periods, body.numberOfGames)
+  const plans = generateTournamentPlans(players, positions, gameFormat.number_of_periods, numberOfGames)
 
   // Pre-generate all match IDs
-  const matchIds: string[] = Array.from({ length: body.numberOfGames }, () => uuidv4())
+  const matchIds: string[] = Array.from({ length: numberOfGames }, () => uuidv4())
   const now = new Date().toISOString()
 
   // Build atomic batch: matches + tournament links + match plans
@@ -132,7 +137,7 @@ tournaments.post('/:id/generate', async (c) => {
     ),
     ...matchIds.map((matchId) =>
       c.env.DB.prepare(
-        'INSERT INTO tournament_matches (tournament_id, match_id) VALUES (?, ?)'
+        'INSERT OR IGNORE INTO tournament_matches (tournament_id, match_id) VALUES (?, ?)'
       ).bind(tournamentId, matchId)
     ),
     ...plans.map((plan) =>

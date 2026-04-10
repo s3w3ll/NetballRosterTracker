@@ -54,6 +54,7 @@ export interface Tournament {
   id: string
   name: string
   matchIds: string[]
+  matchCount: number
   createdAt?: string
 }
 
@@ -144,10 +145,12 @@ export function normalizeSubEvent(raw: any): SubEvent {
 }
 
 export function normalizeTournament(raw: any): Tournament {
+  const matchIds: string[] = raw.matchIds ?? []
   return {
     id: raw.id,
     name: raw.name,
-    matchIds: raw.matchIds ?? [],
+    matchIds,
+    matchCount: matchIds.length > 0 ? matchIds.length : (raw.match_count ?? 0),
     createdAt: raw.created_at,
   }
 }

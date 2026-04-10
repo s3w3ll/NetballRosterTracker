@@ -43,7 +43,7 @@ export default function TournamentsPage() {
             <Card key={tournament.id}>
               <CardHeader>
                 <CardTitle>{tournament.name}</CardTitle>
-                <CardDescription>{tournament.matchIds?.length || 0} games</CardDescription>
+                <CardDescription>{tournament.matchCount} {tournament.matchCount === 1 ? 'game' : 'games'}</CardDescription>
               </CardHeader>
               <CardContent>
 

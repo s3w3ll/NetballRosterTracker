@@ -8,7 +8,8 @@ const tournaments = new Hono<{ Bindings: Env; Variables: Variables }>()
 tournaments.get('/', async (c) => {
   const userId = c.get('userId')
   const rows = await c.env.DB.prepare(
-    'SELECT * FROM tournaments WHERE user_id = ? ORDER BY created_at DESC'
+    `SELECT t.*, (SELECT COUNT(*) FROM tournament_matches tm WHERE tm.tournament_id = t.id) AS match_count
+     FROM tournaments t WHERE t.user_id = ? ORDER BY t.created_at DESC`
   ).bind(userId).all()
   return c.json(rows.results)
 })

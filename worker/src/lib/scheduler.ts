@@ -1,5 +1,6 @@
 const W_COURT = 10
-const W_ZONE = 3
+const W_ZONE_BALANCE = 5  // within-player: how much less time vs player's own other-zone average
+const W_ZONE = 3          // squad-level: how much less time vs squad average for this zone
 const W_POSITION = 1
 
 export interface SchedulerPlayer {
@@ -24,6 +25,9 @@ export function generateTournamentPlans(
   numberOfGames: number
 ): GeneratedPeriodPlan[] {
   if (players.length === 0 || positions.length === 0) return []
+
+  // Distinct zone keys — used for within-player zone balance scoring
+  const allZoneKeys = [...new Set(positions.map(p => p.positionGroup ?? p.abbreviation))]
 
   // Per-player running totals — never reset between games
   const courtPeriods: Record<string, number> = {}
@@ -67,6 +71,10 @@ export function generateTournamentPlans(
         const avgZone = players.reduce((s, p) => s + (zoneCounts[p.id][zoneKey] ?? 0), 0) / n
         const avgPos = players.reduce((s, p) => s + (positionCounts[p.id][pos.abbreviation] ?? 0), 0) / n
 
+        // For zone balance: compare player's time in THIS zone vs their OTHER zones.
+        // A player who has played more in other zones gets a bonus for this zone.
+        const otherZoneKeys = allZoneKeys.filter(z => z !== zoneKey)
+
         // Separate eligible (under limit) from over-limit players so that
         // over-limit players are only considered when no eligible player remains.
         const eligible = players.filter(p => !assignedThisPeriod.has(p.id) && periodsThisGame[p.id] < maxPeriodsPerGame)
@@ -76,9 +84,15 @@ export function generateTournamentPlans(
         let bestScore = -Infinity
 
         for (const player of pool) {
+          const playerThisZone = zoneCounts[player.id][zoneKey] ?? 0
+          const playerOtherZoneAvg = otherZoneKeys.length > 0
+            ? otherZoneKeys.reduce((s, z) => s + (zoneCounts[player.id][z] ?? 0), 0) / otherZoneKeys.length
+            : playerThisZone  // single zone — balance term cancels out
+
           const score =
             (avgCourt - courtPeriods[player.id]) * W_COURT +
-            (avgZone - (zoneCounts[player.id][zoneKey] ?? 0)) * W_ZONE +
+            (playerOtherZoneAvg - playerThisZone) * W_ZONE_BALANCE +
+            (avgZone - playerThisZone) * W_ZONE +
             (avgPos - (positionCounts[player.id][pos.abbreviation] ?? 0)) * W_POSITION
           if (score > bestScore) {
             bestScore = score

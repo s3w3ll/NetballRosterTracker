@@ -104,6 +104,28 @@ describe('generateTournamentPlans', () => {
     expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(3)
   })
 
+  it('within-player zone balance: no player has a gap > 4 periods between their most and least played zones over 5 games', () => {
+    const players = makePlayers(12)
+    const plans = generateTournamentPlans(players, sixAside, 4, 5)
+    const zoneCounts: Record<string, Record<string, number>> = {}
+    for (const p of players) zoneCounts[p.id] = { A: 0, C: 0, D: 0 }
+    for (const plan of plans) {
+      for (const pp of plan.playerPositions) {
+        const pos = sixAside.find(p => p.abbreviation === pp.position)!
+        const zone = pos.positionGroup!
+        zoneCounts[pp.playerId][zone]++
+      }
+    }
+    for (const player of players) {
+      const zc = zoneCounts[player.id]
+      const vals = Object.values(zc).filter(v => v > 0)
+      if (vals.length > 1) {
+        const gap = Math.max(...vals) - Math.min(...vals)
+        expect(gap).toBeLessThanOrEqual(4)
+      }
+    }
+  })
+
   it('carries court time deficit across games (state persists)', () => {
     // With 8 players and 7 positions over 2 games × 4 periods:
     // One player benched each period. Across 8 periods total, each should sit exactly once.

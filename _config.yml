@@ -1,0 +1,6 @@
+exclude:
+  - docs/
+  - worker/
+  - src/
+  - scripts/
+  - node_modules/

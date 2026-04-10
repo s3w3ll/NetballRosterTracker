@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { PlusCircle, BarChart2, Trash2 } from 'lucide-react';
+import { PlusCircle, BarChart2, Trash2, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { getNavId, setNavId } from '@/lib/nav';
@@ -150,6 +150,20 @@ export default function TournamentViewPage() {
       return counts
     }, [allMatchPlans])
 
+    // Per-period position grid: matchId → period → playerId → posAbbr
+    const planGridByMatch = useMemo(() => {
+      if (!allMatchPlans) return {} as Record<string, Record<number, Record<string, string>>>
+      const result: Record<string, Record<number, Record<string, string>>> = {}
+      for (const plan of allMatchPlans) {
+        if (!result[plan.matchId]) result[plan.matchId] = {}
+        if (!result[plan.matchId][plan.quarter]) result[plan.matchId][plan.quarter] = {}
+        for (const pp of plan.playerPositions) {
+          result[plan.matchId][plan.quarter][pp.playerId] = pp.position
+        }
+      }
+      return result
+    }, [allMatchPlans])
+
     // Periods per player per position, broken down per match
     const planPositionsByMatch = useMemo(() => {
       if (!allMatchPlans) return {} as Record<string, Record<string, Record<string, number>>>
@@ -173,6 +187,7 @@ export default function TournamentViewPage() {
         router.push('/games/play?mode=plan');
     };
 
+    const [viewPlanMatchId, setViewPlanMatchId] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
 
     const handleDelete = useCallback(async () => {
@@ -354,8 +369,56 @@ export default function TournamentViewPage() {
                                       })()}
                                     </TableBody>
                                 </Table>
+                                {viewPlanMatchId === match.id && (() => {
+                                    const periods = Array.from(
+                                        { length: gameFormat?.numberOfPeriods ?? 4 },
+                                        (_, i) => i + 1
+                                    )
+                                    const grid = planGridByMatch[match.id] ?? {}
+                                    return (
+                                        <div className="mt-4 border-t pt-4">
+                                            <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Period-by-period plan</h4>
+                                            <div className="overflow-x-auto">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead>Player</TableHead>
+                                                            {periods.map(q => (
+                                                                <TableHead key={q} className="text-center">Q{q}</TableHead>
+                                                            ))}
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {players.map((player: any) => (
+                                                            <TableRow key={player.id}>
+                                                                <TableCell className="font-medium">{player.name}</TableCell>
+                                                                {periods.map(q => {
+                                                                    const pos = grid[q]?.[player.id]
+                                                                    return (
+                                                                        <TableCell key={q} className="text-center font-mono">
+                                                                            {pos ?? <span className="text-muted-foreground">—</span>}
+                                                                        </TableCell>
+                                                                    )
+                                                                })}
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        </div>
+                                    )
+                                })()}
                             </CardContent>
-                             <CardFooter>
+                             <CardFooter className="gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setViewPlanMatchId(v => v === match.id ? null : match.id)}
+                                >
+                                    {viewPlanMatchId === match.id
+                                        ? <><EyeOff className="mr-2 h-4 w-4" />Hide Plan</>
+                                        : <><Eye className="mr-2 h-4 w-4" />View Plan</>
+                                    }
+                                </Button>
                                 <Button variant="outline" onClick={() => handleEditPlan(match.id)}>
                                     Edit Plan
                                 </Button>

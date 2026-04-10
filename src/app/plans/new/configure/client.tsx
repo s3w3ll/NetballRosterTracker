@@ -74,6 +74,7 @@ export default function PlanSetupPage() {
 
       toast({ title: "Match Plan Created!", description: "Your new match plan has been set up." });
       setNavId('gameId', matchId);
+      setNavId('tournamentId', '');  // ensure no stale tournament context
       router.push('/games/play?mode=plan');
     } catch (error: any) {
        toast({

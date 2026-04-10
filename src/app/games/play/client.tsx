@@ -1075,6 +1075,7 @@ export default function GamePage() {
   const gameId = getNavId('gameId');
   const tournamentId = getNavId('tournamentId');
   const defaultMode = searchParams.get('mode') || 'live';
+  const standalone = defaultMode === 'plan' && !tournamentId;
 
   const { data: match, isLoading: isMatchLoading } = useMatch(gameId);
   const { data: gameFormat, isLoading: isGameFormatLoading } = useGameFormat(match?.gameFormatId);
@@ -1159,6 +1160,7 @@ export default function GamePage() {
             players={players}
             tournamentId={tournamentId}
             initialMatchPlans={currentGamePlans ?? undefined}
+            standalone={standalone}
           />
         </TabsContent>
 

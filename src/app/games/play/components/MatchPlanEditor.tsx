@@ -36,9 +36,11 @@ interface MatchPlanEditorProps {
   initialMatchPlans?: MatchPlan[]
   /** When set, show Save + Back-to-Tournament buttons and buffer all changes locally */
   tournamentId?: string | null
+  /** When true (plan created from /plans/new), show Done → /plans header; saves are still real-time */
+  standalone?: boolean
 }
 
-export default function MatchPlanEditor({ match, gameFormat, positions, players, initialMatchPlans, tournamentId }: MatchPlanEditorProps) {
+export default function MatchPlanEditor({ match, gameFormat, positions, players, initialMatchPlans, tournamentId, standalone }: MatchPlanEditorProps) {
   const router = useRouter()
   const { toast } = useToast()
   const { getIdToken } = useFirebase()
@@ -311,6 +313,20 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players,
 
   return (
     <div className="space-y-6">
+      {/* Standalone plan header */}
+      {standalone && !tournamentMode && (
+        <div className="flex items-center justify-between">
+          <Button variant="outline" size="sm" onClick={() => router.push('/plans')}>
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Back to Plans
+          </Button>
+          <span className="text-sm text-muted-foreground">Changes are saved automatically</span>
+          <Button size="sm" onClick={() => router.push('/plans')}>
+            Done
+          </Button>
+        </div>
+      )}
+
       {/* Tournament context header */}
       {tournamentMode && (
         <div className="flex items-center justify-between">
@@ -545,7 +561,16 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players,
         </Card>
       )}
 
-      {/* Repeat Save/Back at bottom for convenience */}
+      {/* Repeat Done at bottom for standalone plans */}
+      {standalone && !tournamentMode && (
+        <div className="flex justify-end pt-2 border-t">
+          <Button onClick={() => router.push('/plans')}>
+            Done
+          </Button>
+        </div>
+      )}
+
+      {/* Repeat Save/Back at bottom for tournament plans */}
       {tournamentMode && (
         <div className="flex justify-end gap-2 pt-2 border-t">
           <Button variant="outline" onClick={() => router.push('/tournaments/view')}>

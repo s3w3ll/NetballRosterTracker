@@ -34,7 +34,9 @@
       "Bash(git commit:*)",
       "Bash(git:*)",
       "Bash(npm run:*)",
-      "Bash(npx wrangler:*)"
+      "Bash(npx wrangler:*)",
+      "mcp__claude_ai_Cloudflare_Developer_Platform__d1_databases_list",
+      "mcp__claude_ai_Cloudflare_Developer_Platform__d1_database_query"
     ]
   }
 }

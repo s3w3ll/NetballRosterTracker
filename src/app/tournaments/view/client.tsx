@@ -137,6 +137,33 @@ export default function TournamentViewPage() {
       return result
     }, [allMatchPlans])
 
+    // Periods per player per position across all tournament match plans
+    const planPositionCounts = useMemo(() => {
+      if (!allMatchPlans) return {} as Record<string, Record<string, number>>
+      const counts: Record<string, Record<string, number>> = {}
+      for (const plan of allMatchPlans) {
+        for (const pp of plan.playerPositions) {
+          if (!counts[pp.playerId]) counts[pp.playerId] = {}
+          counts[pp.playerId][pp.position] = (counts[pp.playerId][pp.position] ?? 0) + 1
+        }
+      }
+      return counts
+    }, [allMatchPlans])
+
+    // Periods per player per position, broken down per match
+    const planPositionsByMatch = useMemo(() => {
+      if (!allMatchPlans) return {} as Record<string, Record<string, Record<string, number>>>
+      const result: Record<string, Record<string, Record<string, number>>> = {}
+      for (const plan of allMatchPlans) {
+        if (!result[plan.matchId]) result[plan.matchId] = {}
+        for (const pp of plan.playerPositions) {
+          if (!result[plan.matchId][pp.playerId]) result[plan.matchId][pp.playerId] = {}
+          result[plan.matchId][pp.playerId][pp.position] = (result[plan.matchId][pp.playerId][pp.position] ?? 0) + 1
+        }
+      }
+      return result
+    }, [allMatchPlans])
+
     const handleAddMatch = () => {
         router.push('/tournaments/add-match');
     };
@@ -251,11 +278,16 @@ export default function TournamentViewPage() {
                                 >
                                   {display}
                                 </TableCell>
-                                {positions.map((p: any) => (
-                                  <TableCell key={p.id} className="text-right font-mono">
-                                    {formatTime(tournamentTimeTotals[player.id]?.positions[p.abbreviation] || 0)}
-                                  </TableCell>
-                                ))}
+                                {positions.map((p: any) => {
+                                  const actualPosTime = tournamentTimeTotals[player.id]?.positions[p.abbreviation] || 0
+                                  const plannedPos = planPositionCounts[player.id]?.[p.abbreviation] ?? 0
+                                  const posDisplay = actualPosTime > 0 ? formatTime(actualPosTime) : plannedPos > 0 ? `${plannedPos}p` : '—'
+                                  return (
+                                    <TableCell key={p.id} className="text-right font-mono">
+                                      {posDisplay}
+                                    </TableCell>
+                                  )
+                                })}
                               </TableRow>
                             )})
                           })()}
@@ -305,11 +337,16 @@ export default function TournamentViewPage() {
                                             >
                                               {display}
                                             </TableCell>
-                                            {positions.map((p: any) => (
-                                              <TableCell key={p.id} className="text-right font-mono">
-                                                {formatTime(matchTimes[player.id]?.positions[p.abbreviation] || 0)}
-                                              </TableCell>
-                                            ))}
+                                            {positions.map((p: any) => {
+                                              const actualPosTime = matchTimes[player.id]?.positions[p.abbreviation] || 0
+                                              const plannedPos = planPositionsByMatch[match.id]?.[player.id]?.[p.abbreviation] ?? 0
+                                              const posDisplay = actualPosTime > 0 ? formatTime(actualPosTime) : plannedPos > 0 ? `${plannedPos}p` : '—'
+                                              return (
+                                                <TableCell key={p.id} className="text-right font-mono">
+                                                  {posDisplay}
+                                                </TableCell>
+                                              )
+                                            })}
                                           </TableRow>
                                         )})
                                       })()}

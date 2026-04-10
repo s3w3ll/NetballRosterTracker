@@ -1073,11 +1073,13 @@ function MatchPlanner({ match, gameFormat, positions, players, matchPlans }: { m
 export default function GamePage() {
   const searchParams = useSearchParams();
   const gameId = getNavId('gameId');
+  const tournamentId = getNavId('tournamentId');
   const defaultMode = searchParams.get('mode') || 'live';
 
   const { data: match, isLoading: isMatchLoading } = useMatch(gameId);
   const { data: gameFormat, isLoading: isGameFormatLoading } = useGameFormat(match?.gameFormatId);
   const { data: roster, isLoading: isRosterLoading } = useRoster(match?.team1RosterId);
+  const { data: currentGamePlans } = useMatchPlansMultiple(gameId ? [gameId] : []);
 
   const positions = gameFormat?.positions ?? [];
   const players = roster?.players ?? [];
@@ -1150,7 +1152,14 @@ export default function GamePage() {
           <LiveGameTracker match={match} gameFormat={gameFormat} positions={positions} players={players} />
         </TabsContent>
         <TabsContent value="plan">
-          <MatchPlanEditor match={match} gameFormat={gameFormat} positions={positions} players={players} />
+          <MatchPlanEditor
+            match={match}
+            gameFormat={gameFormat}
+            positions={positions}
+            players={players}
+            tournamentId={tournamentId}
+            initialMatchPlans={currentGamePlans ?? undefined}
+          />
         </TabsContent>
 
       </Tabs>

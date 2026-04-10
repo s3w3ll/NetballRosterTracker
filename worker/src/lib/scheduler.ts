@@ -41,9 +41,20 @@ export function generateTournamentPlans(
     }
   }
 
+  // Maximum periods any player should play in a single game.
+  // floor(court_slots_per_game / players) gives the equitable share.
+  // Only applied when there are more players than positions (bench rotation possible).
+  const maxPeriodsPerGame = players.length > positions.length
+    ? Math.floor((positions.length * numberOfPeriods) / players.length)
+    : numberOfPeriods
+
   const plans: GeneratedPeriodPlan[] = []
 
   for (let gameIdx = 0; gameIdx < numberOfGames; gameIdx++) {
+    // Reset per-game period counts for this game
+    const periodsThisGame: Record<string, number> = {}
+    for (const p of players) periodsThisGame[p.id] = 0
+
     for (let period = 1; period <= numberOfPeriods; period++) {
       const assignedThisPeriod = new Set<string>()
       const playerPositions: Array<{ position: string; playerId: string }> = []
@@ -56,11 +67,15 @@ export function generateTournamentPlans(
         const avgZone = players.reduce((s, p) => s + (zoneCounts[p.id][zoneKey] ?? 0), 0) / n
         const avgPos = players.reduce((s, p) => s + (positionCounts[p.id][pos.abbreviation] ?? 0), 0) / n
 
+        // Separate eligible (under limit) from over-limit players so that
+        // over-limit players are only considered when no eligible player remains.
+        const eligible = players.filter(p => !assignedThisPeriod.has(p.id) && periodsThisGame[p.id] < maxPeriodsPerGame)
+        const pool = eligible.length > 0 ? eligible : players.filter(p => !assignedThisPeriod.has(p.id))
+
         let best: SchedulerPlayer | null = null
         let bestScore = -Infinity
 
-        for (const player of players) {
-          if (assignedThisPeriod.has(player.id)) continue
+        for (const player of pool) {
           const score =
             (avgCourt - courtPeriods[player.id]) * W_COURT +
             (avgZone - (zoneCounts[player.id][zoneKey] ?? 0)) * W_ZONE +
@@ -76,6 +91,7 @@ export function generateTournamentPlans(
         assignedThisPeriod.add(best.id)
         playerPositions.push({ position: pos.abbreviation, playerId: best.id })
         courtPeriods[best.id]++
+        periodsThisGame[best.id]++
         positionCounts[best.id][pos.abbreviation]++
         zoneCounts[best.id][zoneKey] = (zoneCounts[best.id][zoneKey] ?? 0) + 1
       }

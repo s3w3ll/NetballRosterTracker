@@ -262,13 +262,14 @@ export default function TournamentViewPage() {
                         </TableHeader>
                         <TableBody>
                           {(() => {
+                            const summaryPeriodSecs = (primaryGameFormat?.periodDuration ?? 0) * 60
                             const planValues = players.map((p: any) => planPeriodCounts[p.id] ?? 0)
                             const planMin = planValues.length ? Math.min(...planValues) : 0
                             const planMax = planValues.length ? Math.max(...planValues) : 0
                             return players.map((player: any) => {
                               const actualTime = tournamentTimeTotals[player.id]?.total || 0
                               const planned = planPeriodCounts[player.id] ?? 0
-                              const display = actualTime > 0 ? formatTime(actualTime) : planned > 0 ? `${planned}p` : '—'
+                              const display = actualTime > 0 ? formatTime(actualTime) : planned > 0 && summaryPeriodSecs > 0 ? formatTime(planned * summaryPeriodSecs) : '—'
                               return (
                               <TableRow key={player.id}>
                                 <TableCell className="font-medium">{player.name}</TableCell>
@@ -281,7 +282,7 @@ export default function TournamentViewPage() {
                                 {positions.map((p: any) => {
                                   const actualPosTime = tournamentTimeTotals[player.id]?.positions[p.abbreviation] || 0
                                   const plannedPos = planPositionCounts[player.id]?.[p.abbreviation] ?? 0
-                                  const posDisplay = actualPosTime > 0 ? formatTime(actualPosTime) : plannedPos > 0 ? `${plannedPos}p` : '—'
+                                  const posDisplay = actualPosTime > 0 ? formatTime(actualPosTime) : plannedPos > 0 && summaryPeriodSecs > 0 ? formatTime(plannedPos * summaryPeriodSecs) : '—'
                                   return (
                                     <TableCell key={p.id} className="text-right font-mono">
                                       {posDisplay}
@@ -321,13 +322,14 @@ export default function TournamentViewPage() {
                                     </TableHeader>
                                     <TableBody>
                                       {(() => {
+                                        const matchPeriodSecs = (gameFormat?.periodDuration ?? 0) * 60
                                         const matchPlanValues = players.map((p: any) => planPeriodsByMatch[match.id]?.[p.id] ?? 0)
                                         const matchPlanMin = matchPlanValues.length ? Math.min(...matchPlanValues) : 0
                                         const matchPlanMax = matchPlanValues.length ? Math.max(...matchPlanValues) : 0
                                         return players.map((player: any) => {
                                           const actualTime = matchTimes[player.id]?.total || 0
                                           const planned = planPeriodsByMatch[match.id]?.[player.id] ?? 0
-                                          const display = actualTime > 0 ? formatTime(actualTime) : planned > 0 ? `${planned}p` : '—'
+                                          const display = actualTime > 0 ? formatTime(actualTime) : planned > 0 && matchPeriodSecs > 0 ? formatTime(planned * matchPeriodSecs) : '—'
                                           return (
                                           <TableRow key={player.id}>
                                             <TableCell className="font-medium">{player.name}</TableCell>
@@ -340,7 +342,7 @@ export default function TournamentViewPage() {
                                             {positions.map((p: any) => {
                                               const actualPosTime = matchTimes[player.id]?.positions[p.abbreviation] || 0
                                               const plannedPos = planPositionsByMatch[match.id]?.[player.id]?.[p.abbreviation] ?? 0
-                                              const posDisplay = actualPosTime > 0 ? formatTime(actualPosTime) : plannedPos > 0 ? `${plannedPos}p` : '—'
+                                              const posDisplay = actualPosTime > 0 ? formatTime(actualPosTime) : plannedPos > 0 && matchPeriodSecs > 0 ? formatTime(plannedPos * matchPeriodSecs) : '—'
                                               return (
                                                 <TableCell key={p.id} className="text-right font-mono">
                                                   {posDisplay}

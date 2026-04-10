@@ -5,9 +5,14 @@ const matches = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 matches.get('/', async (c) => {
   const userId = c.get('userId')
-  const rows = await c.env.DB.prepare(
-    'SELECT * FROM matches WHERE user_id = ? ORDER BY start_time DESC'
-  ).bind(userId).all()
+  const standalone = c.req.query('standalone') === 'true'
+  const query = standalone
+    ? `SELECT m.* FROM matches m
+       LEFT JOIN tournament_matches tm ON tm.match_id = m.id
+       WHERE m.user_id = ? AND tm.match_id IS NULL
+       ORDER BY m.start_time DESC`
+    : 'SELECT * FROM matches WHERE user_id = ? ORDER BY start_time DESC'
+  const rows = await c.env.DB.prepare(query).bind(userId).all()
   return c.json(rows.results)
 })
 

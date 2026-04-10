@@ -9,6 +9,7 @@ import { type MatchPlan } from '@/api/types'
 import SubEventPanel from './SubEventPanel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -275,6 +276,28 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players,
     }
   }
 
+  // Plan summary derived from draft (tournament mode only) — updates live as players are dragged
+  const planSummary = useMemo(() => {
+    if (!tournamentMode || !draftLineups) return null
+    return players.map(player => {
+      const posCount: Record<string, number> = {}
+      let totalPeriods = 0
+      for (const periodLineup of Object.values(draftLineups)) {
+        for (const [posAbbr, pid] of Object.entries(periodLineup)) {
+          if (pid === player.id) {
+            posCount[posAbbr] = (posCount[posAbbr] ?? 0) + 1
+            totalPeriods++
+          }
+        }
+      }
+      return { player, totalPeriods, posCount }
+    })
+  }, [tournamentMode, draftLineups, players, positions])
+
+  const periodDurationMins = gameFormat?.periodDuration ?? 0
+  const formatPlanTime = (periods: number) =>
+    periods > 0 && periodDurationMins > 0 ? `${periods * periodDurationMins}m` : '—'
+
   if (isLoading || (tournamentMode && !draftLineups)) {
     return (
       <div className="space-y-4">
@@ -485,6 +508,42 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players,
           )
         })}
       </Tabs>
+
+      {/* Plan summary table — tournament mode only */}
+      {tournamentMode && planSummary && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Plan Summary</CardTitle>
+            <CardDescription>Planned minutes per player across all periods.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Player</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  {positions.map(p => (
+                    <TableHead key={p.id ?? p.abbreviation} className="text-right">{p.abbreviation}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {planSummary.map(({ player, totalPeriods, posCount }) => (
+                  <TableRow key={player.id}>
+                    <TableCell className="font-medium">{player.name}</TableCell>
+                    <TableCell className="text-right font-semibold">{formatPlanTime(totalPeriods)}</TableCell>
+                    {positions.map(p => (
+                      <TableCell key={p.id ?? p.abbreviation} className="text-right text-muted-foreground">
+                        {formatPlanTime(posCount[p.abbreviation] ?? 0)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Repeat Save/Back at bottom for convenience */}
       {tournamentMode && (

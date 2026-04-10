@@ -28,7 +28,13 @@
       "Bash(node:*)",
       "Bash(find /c/Repos/NetballRosterTracker/src -type f -name *plan*)",
       "Bash(npx tsc:*)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm test:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git:*)",
+      "Bash(npm run:*)",
+      "Bash(npx wrangler:*)"
     ]
   }
 }

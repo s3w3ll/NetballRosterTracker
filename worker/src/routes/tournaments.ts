@@ -81,6 +81,34 @@ tournaments.delete('/:id/matches/:matchId', async (c) => {
   return c.json({ tournamentId, matchId })
 })
 
+// DELETE /api/tournaments/:id
+tournaments.delete('/:id', async (c) => {
+  const userId = c.get('userId')
+  const { id } = c.req.param()
+
+  const tournament = await c.env.DB.prepare(
+    'SELECT id FROM tournaments WHERE id = ? AND user_id = ?'
+  ).bind(id, userId).first()
+  if (!tournament) return c.json({ error: 'Not found' }, 404)
+
+  // Fetch associated match IDs before deleting the tournament
+  const matchRows = await c.env.DB.prepare(
+    'SELECT match_id FROM tournament_matches WHERE tournament_id = ?'
+  ).bind(id).all()
+  const matchIds = matchRows.results.map((r: Record<string, unknown>) => r.match_id as string)
+
+  // Atomically delete the tournament (cascades to tournament_matches) and all its matches
+  // (match deletion cascades to match_plans and sub_events via their FK constraints)
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM tournaments WHERE id = ? AND user_id = ?').bind(id, userId),
+    ...matchIds.map((matchId) =>
+      c.env.DB.prepare('DELETE FROM matches WHERE id = ? AND user_id = ?').bind(matchId, userId)
+    ),
+  ])
+
+  return c.json({ id })
+})
+
 // POST /api/tournaments/:id/generate
 tournaments.post('/:id/generate', async (c) => {
   const userId = c.get('userId')

@@ -14,10 +14,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { PlusCircle, BarChart2 } from 'lucide-react';
+import { PlusCircle, BarChart2, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { getNavId, setNavId } from '@/lib/nav';
+import { useToast } from '@/hooks/use-toast';
 import {
   Table,
   TableBody,
@@ -42,6 +43,7 @@ function courtTimeColor(value: number, min: number, max: number): string {
 
 export default function TournamentViewPage() {
     const router = useRouter();
+    const { toast } = useToast();
     const { getIdToken } = useFirebase();
     const tournamentId = getNavId('tournamentId');
 
@@ -144,6 +146,21 @@ export default function TournamentViewPage() {
         router.push('/games/play?mode=plan');
     };
 
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const handleDelete = useCallback(async () => {
+        if (!tournament) return;
+        if (!window.confirm(`Delete "${tournament.name}" and all its games? This cannot be undone.`)) return;
+        setIsDeleting(true);
+        try {
+            await apiJSON(`/api/tournaments/${tournament.id}`, getIdToken, { method: 'DELETE' });
+            router.push('/tournaments');
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Delete failed', description: error.message });
+            setIsDeleting(false);
+        }
+    }, [tournament, getIdToken, router, toast]);
+
     const isLoading = isTournamentLoading || areMatchesLoading || isRosterLoading || isFormatLoading || areAllFormatsLoading || areSubEventsLoading || arePlansLoading;
 
     if (isLoading) {
@@ -190,10 +207,16 @@ export default function TournamentViewPage() {
                 <h1 className="text-3xl font-bold font-headline">{tournament.name}</h1>
                 <p className="text-muted-foreground">Review stats for this tournament.</p>
                 </div>
-                <Button onClick={handleAddMatch}>
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Add Match
-                </Button>
+                <div className="flex gap-2">
+                    <Button onClick={handleAddMatch}>
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                        Add Match
+                    </Button>
+                    <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {isDeleting ? 'Deleting…' : 'Delete'}
+                    </Button>
+                </div>
             </div>
 
             <Card className="mb-8">
@@ -206,7 +229,7 @@ export default function TournamentViewPage() {
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Player</TableHead>
-                                <TableHead className="text-right">Total Time</TableHead>
+                                <TableHead className="text-right">Court Time</TableHead>
                                 {positions.map((p: any) => <TableHead key={p.id} className="text-right">{p.abbreviation}</TableHead>)}
                             </TableRow>
                         </TableHeader>
@@ -215,14 +238,18 @@ export default function TournamentViewPage() {
                             const planValues = players.map((p: any) => planPeriodCounts[p.id] ?? 0)
                             const planMin = planValues.length ? Math.min(...planValues) : 0
                             const planMax = planValues.length ? Math.max(...planValues) : 0
-                            return players.map((player: any) => (
+                            return players.map((player: any) => {
+                              const actualTime = tournamentTimeTotals[player.id]?.total || 0
+                              const planned = planPeriodCounts[player.id] ?? 0
+                              const display = actualTime > 0 ? formatTime(actualTime) : planned > 0 ? `${planned}p` : '—'
+                              return (
                               <TableRow key={player.id}>
                                 <TableCell className="font-medium">{player.name}</TableCell>
                                 <TableCell
                                   className="text-right font-mono font-semibold"
                                   style={{ color: courtTimeColor(planPeriodCounts[player.id] ?? 0, planMin, planMax) }}
                                 >
-                                  {formatTime(tournamentTimeTotals[player.id]?.total || 0)}
+                                  {display}
                                 </TableCell>
                                 {positions.map((p: any) => (
                                   <TableCell key={p.id} className="text-right font-mono">
@@ -230,7 +257,7 @@ export default function TournamentViewPage() {
                                   </TableCell>
                                 ))}
                               </TableRow>
-                            ))
+                            )})
                           })()}
                         </TableBody>
                     </Table>
@@ -256,7 +283,7 @@ export default function TournamentViewPage() {
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead>Player</TableHead>
-                                            <TableHead className="text-right">Total Time</TableHead>
+                                            <TableHead className="text-right">Court Time</TableHead>
                                             {positions.map((p: any) => <TableHead key={p.id} className="text-right">{p.abbreviation}</TableHead>)}
                                         </TableRow>
                                     </TableHeader>
@@ -265,14 +292,18 @@ export default function TournamentViewPage() {
                                         const matchPlanValues = players.map((p: any) => planPeriodsByMatch[match.id]?.[p.id] ?? 0)
                                         const matchPlanMin = matchPlanValues.length ? Math.min(...matchPlanValues) : 0
                                         const matchPlanMax = matchPlanValues.length ? Math.max(...matchPlanValues) : 0
-                                        return players.map((player: any) => (
+                                        return players.map((player: any) => {
+                                          const actualTime = matchTimes[player.id]?.total || 0
+                                          const planned = planPeriodsByMatch[match.id]?.[player.id] ?? 0
+                                          const display = actualTime > 0 ? formatTime(actualTime) : planned > 0 ? `${planned}p` : '—'
+                                          return (
                                           <TableRow key={player.id}>
                                             <TableCell className="font-medium">{player.name}</TableCell>
                                             <TableCell
                                               className="text-right font-mono font-semibold"
-                                              style={{ color: courtTimeColor(planPeriodsByMatch[match.id]?.[player.id] ?? 0, matchPlanMin, matchPlanMax) }}
+                                              style={{ color: courtTimeColor(planned, matchPlanMin, matchPlanMax) }}
                                             >
-                                              {formatTime(matchTimes[player.id]?.total || 0)}
+                                              {display}
                                             </TableCell>
                                             {positions.map((p: any) => (
                                               <TableCell key={p.id} className="text-right font-mono">
@@ -280,7 +311,7 @@ export default function TournamentViewPage() {
                                               </TableCell>
                                             ))}
                                           </TableRow>
-                                        ))
+                                        )})
                                       })()}
                                     </TableBody>
                                 </Table>

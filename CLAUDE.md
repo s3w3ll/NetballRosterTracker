@@ -1,4 +1,8 @@
-# NetballRosterTracker — CLAUDE.md
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+# NetballRosterTracker
 
 ## Commands
 
@@ -18,15 +22,32 @@ npm run dev          # wrangler dev (local)
 npm run deploy       # wrangler deploy → netball-roster-tracker.forgesync.workers.dev
 npm run db:apply     # apply schema.sql to local D1
 npm run db:apply:remote  # apply schema.sql to remote D1
-npx tsc --noEmit    # typecheck worker (1 known pre-existing error in auth.ts)
+npm run typecheck    # tsc --noEmit (1 known pre-existing error in auth.ts)
 ```
 
 ## Architecture
 
 - **Frontend**: Next.js 15 App Router, `output: 'export'` → static site on GitHub Pages (`netball.forgesync.co.nz`)
+- **UI**: Tailwind CSS + shadcn/ui (Radix UI primitives)
 - **Backend**: Cloudflare Worker (Hono + jose) + D1 (SQLite). Schema in `worker/schema.sql`.
 - **Auth**: Firebase Auth (email/password, Google, Microsoft, anonymous). Worker verifies Firebase JWTs via `jose` — no Admin SDK.
 - **Deploy**: GitHub Actions builds Next.js + deploys Worker on push to `main`. Always commit directly to `main`.
+
+## Environment Setup
+
+### Frontend
+Create `.env.local` with Firebase config:
+```
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_FIREBASE_APP_ID=...
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+NEXT_PUBLIC_WORKER_URL=https://netball-roster-tracker.forgesync.workers.dev
+```
+
+### Worker
+Wrangler CLI uses `wrangler.toml` for configuration. D1 database binding is `DB`. `ALLOWED_ORIGINS` env var controls CORS (set in wrangler.toml or Cloudflare dashboard).
 
 ## Key Files
 

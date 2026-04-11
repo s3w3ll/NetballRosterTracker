@@ -90,6 +90,8 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   const lastUpdateTime = useRef<number | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const dragJustFinished = useRef(false)
+  const periodStartTime = useRef<number | null>(null);
+  const periodDuration = useRef<number>(0);
 
   const { getIdToken } = useFirebase()
   const initialLineupStamped = useRef(false)
@@ -135,7 +137,9 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 
   useEffect(() => {
     if (gameFormat) {
-      setTime(gameFormat.periodDuration * 60);
+      const durationSeconds = gameFormat.periodDuration * 60;
+      periodDuration.current = durationSeconds;
+      setTime(durationSeconds);
     }
   }, [gameFormat]);
 
@@ -151,24 +155,32 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
       if (lastUpdateTime.current === null) {
           lastUpdateTime.current = Date.now();
       }
+      if (periodStartTime.current === null) {
+          periodStartTime.current = Date.now();
+      }
       intervalRef.current = setInterval(() => {
-        setTime(prevTime => {
-            if (prevTime <= 1) {
-                if (intervalRef.current) clearInterval(intervalRef.current);
-                updatePlayerTimes();
-                setIsActive(false);
-                lastUpdateTime.current = null;
-                return 0;
-            }
+        const now = Date.now();
+        const elapsedSeconds = Math.floor((now - periodStartTime.current!) / 1000);
+        const remainingTime = Math.max(0, periodDuration.current - elapsedSeconds);
+
+        setTime(remainingTime);
+
+        if (remainingTime <= 0) {
+            if (intervalRef.current) clearInterval(intervalRef.current);
             updatePlayerTimes();
-            return prevTime - 1;
-        });
+            setIsActive(false);
+            lastUpdateTime.current = null;
+            periodStartTime.current = null;
+        } else {
+            updatePlayerTimes();
+        }
       }, 1000);
     } else {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         updatePlayerTimes();
         lastUpdateTime.current = null;
+        periodStartTime.current = null;
       }
     }
 
@@ -215,6 +227,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   const resetTimer = () => {
     setIsActive(false);
     setTime(gameFormat?.periodDuration * 60 || 0);
+    periodStartTime.current = null;
   };
 
   const advancePeriod = () => {
@@ -238,6 +251,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
     setCurrentPeriod(nextPeriod)
     setTime(gameFormat.periodDuration * 60)
     lastUpdateTime.current = null
+    periodStartTime.current = null
   }
 
   const handleTimerClick = () => {
@@ -252,7 +266,12 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
       const mins = parseInt(parts[0], 10)
       const secs = parseInt(parts[1], 10)
       if (!isNaN(mins) && !isNaN(secs)) {
-        setTime(mins * 60 + secs)
+        const newRemainingTime = mins * 60 + secs
+        setTime(newRemainingTime)
+        // Recalculate periodStartTime so timestamp-based calculation produces correct remaining time
+        const now = Date.now()
+        const elapsedTime = periodDuration.current - newRemainingTime
+        periodStartTime.current = now - (elapsedTime * 1000)
       }
     }
     setIsEditingTimer(false)

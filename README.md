@@ -11,7 +11,6 @@ Create and manage team rosters with customizable player lists. Rosters are reusa
 
 **Use cases:**
 - Manage multiple teams (A-team, B-team, development squad)
-- Track player availability and injuries
 - Reuse rosters across seasons
 
 ### ⏱️ Live Match Tracker
@@ -43,7 +42,7 @@ Pre-plan lineups for each period before a game to visualize rotation strategies:
 Group multiple matches into tournaments with intelligent auto-generation:
 
 - **Automatic match scheduling** with configurable parameters (team sizes, match count, period duration)
-- **AI-powered position allocation** using a greedy scheduler algorithm
+- **Algorithmic position allocation** using a greedy scheduler algorithm
 - **Aggregated statistics** showing total court time and position time across all tournament matches
 - **Per-game fairness enforcement** to prevent players from dominating single matches
 - **Visual tournament overview** with match-by-match breakdowns
@@ -153,7 +152,7 @@ Flexible sign-in options powered by Firebase Auth:
 ```bash
 npm run dev          # Dev server on :9002 (turbopack)
 npm run build        # Static export → out/
-npm run typecheck    # TypeScript validation
+npm run typecheck    # TypeScript validation (3 known pre-existing errors — ignore unless you changed types)
 npm run test         # Run Vitest tests
 npm run test:watch   # Watch mode for tests
 ```
@@ -165,7 +164,7 @@ npm run dev              # Local dev server
 npm run deploy           # Deploy to Cloudflare Workers
 npm run db:apply         # Apply schema to local D1
 npm run db:apply:remote  # Apply schema to remote D1
-npm run typecheck        # TypeScript validation
+npm run typecheck        # TypeScript validation (1 known pre-existing error in auth.ts — ignore unless you changed auth)
 ```
 
 ### Production Build

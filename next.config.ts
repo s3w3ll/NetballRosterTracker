@@ -6,6 +6,8 @@ const withPWA = withPWAInit({
   cacheOnFrontEndNav: true,
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
+  // Avoids the PWA plugin mistaking worker/src/index.ts (Cloudflare Worker) for a custom SW.
+  customWorkerSrc: 'src/pwa-worker',
   // Service worker only active in production builds — dev is unaffected.
   disable: process.env.NODE_ENV === 'development',
   fallbacks: {

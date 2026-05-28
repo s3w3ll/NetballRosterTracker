@@ -126,6 +126,30 @@ describe('generateTournamentPlans', () => {
     }
   })
 
+  it('within a single game with surplus players (11p/6pos), no player spans non-adjacent zones', () => {
+    const players = makePlayers(11)
+    const plans = generateTournamentPlans(players, sixAside, 4, 1)
+    const ADJACENT: Record<string, string[]> = { A: ['C'], C: ['A', 'D'], D: ['C'] }
+    for (const player of players) {
+      const zones = new Set<string>()
+      for (const plan of plans) {
+        for (const pp of plan.playerPositions) {
+          if (pp.playerId === player.id) {
+            const pos = sixAside.find(p => p.abbreviation === pp.position)!
+            zones.add(pos.positionGroup!)
+          }
+        }
+      }
+      for (const z1 of zones) {
+        for (const z2 of zones) {
+          if (z1 !== z2) {
+            expect(ADJACENT[z1], `player ${player.id} spans non-adjacent zones ${z1} and ${z2}`).toContain(z2)
+          }
+        }
+      }
+    }
+  })
+
   it('within a single game (exact squad size), each player stays in one zone throughout', () => {
     // 6 players = 6 positions: everyone plays every period, W_ZONE_STICKY dominates
     const players = makePlayers(6)

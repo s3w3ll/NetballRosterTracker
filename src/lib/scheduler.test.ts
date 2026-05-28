@@ -126,6 +126,37 @@ describe('generateTournamentPlans', () => {
     }
   })
 
+  it('within a single game (exact squad size), each player stays in one zone throughout', () => {
+    // 6 players = 6 positions: everyone plays every period, W_ZONE_STICKY dominates
+    const players = makePlayers(6)
+    const plans = generateTournamentPlans(players, sixAside, 4, 1)
+    for (const player of players) {
+      const zones = new Set<string>()
+      for (const plan of plans) {
+        for (const pp of plan.playerPositions) {
+          if (pp.playerId === player.id) {
+            const pos = sixAside.find(p => p.abbreviation === pp.position)!
+            zones.add(pos.positionGroup!)
+          }
+        }
+      }
+      expect(zones.size).toBe(1)
+    }
+  })
+
+  it('zone stickiness does not apply to 7-aside (court time still balanced)', () => {
+    const players = makePlayers(10)
+    const plans = generateTournamentPlans(players, sevenAside, 4, 5)
+    const counts: Record<string, number> = {}
+    for (const plan of plans) {
+      for (const pp of plan.playerPositions) {
+        counts[pp.playerId] = (counts[pp.playerId] ?? 0) + 1
+      }
+    }
+    const values = Object.values(counts)
+    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(2)
+  })
+
   it('carries court time deficit across games (state persists)', () => {
     // With 8 players and 7 positions over 2 games × 4 periods:
     // One player benched each period. Across 8 periods total, each should sit exactly once.

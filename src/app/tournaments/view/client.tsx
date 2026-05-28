@@ -86,31 +86,45 @@ export default function TournamentViewPage() {
             .finally(() => setAreSubEventsLoading(false));
     }, [matches, getIdToken]);
 
-    const tournamentTimeTotals = useMemo(() => {
-        if (!players.length || !matches.length || !allGameFormats) return {};
+    // Per-match: use sub-events if starting-lineup events exist, otherwise fall back to match_plans.
+    // This ensures the summary stays correct after some (but not all) games have been manually edited.
+    const summaryTotals = useMemo(() => {
+        if (!players.length || !matches.length || !allGameFormats) return {} as MatchTimeCalculations
 
-        const tournamentTotals: MatchTimeCalculations = players.reduce((acc: any, p: any) => ({ ...acc, [p.id]: { total: 0, positions: {} } }), {});
+        const totals: MatchTimeCalculations = players.reduce((acc: any, p: any) => ({ ...acc, [p.id]: { total: 0, positions: {} } }), {})
 
         matches.forEach((match: any) => {
-            const gameFormat = allGameFormats.find(f => f.id === match.gameFormatId);
-            if (!gameFormat) return;
-            const matchSubEvents = allSubEvents.filter(e => e.matchId === match.id);
-            const matchTimes = calculatePlayerTimes(matchSubEvents, gameFormat.periodDuration * 60);
-            Object.entries(matchTimes).forEach(([playerId, timeInfo]) => {
-                if (tournamentTotals[playerId]) {
-                    tournamentTotals[playerId].total += timeInfo.total;
-                    Object.entries(timeInfo.positions).forEach(([pos, time]) => {
-                        if (!tournamentTotals[playerId].positions[pos]) {
-                            tournamentTotals[playerId].positions[pos] = 0;
-                        }
-                        tournamentTotals[playerId].positions[pos] += time as number;
-                    });
-                }
-            });
-        });
-        return tournamentTotals;
+            const gameFormat = allGameFormats.find(f => f.id === match.gameFormatId)
+            if (!gameFormat) return
+            const periodSecs = gameFormat.periodDuration * 60
+            const matchSubEvents = allSubEvents.filter(e => e.matchId === match.id)
+            const hasStartingLineup = matchSubEvents.some(e => e.secondsElapsed === 0)
 
-    }, [players, matches, allGameFormats, allSubEvents]);
+            if (hasStartingLineup) {
+                const matchTimes = calculatePlayerTimes(matchSubEvents, periodSecs)
+                Object.entries(matchTimes).forEach(([playerId, timeInfo]) => {
+                    if (totals[playerId]) {
+                        totals[playerId].total += timeInfo.total
+                        Object.entries(timeInfo.positions).forEach(([pos, time]) => {
+                            totals[playerId].positions[pos] = (totals[playerId].positions[pos] ?? 0) + (time as number)
+                        })
+                    }
+                })
+            } else {
+                const matchPlanRows = allMatchPlans?.filter(p => p.matchId === match.id) ?? []
+                for (const plan of matchPlanRows) {
+                    for (const pp of plan.playerPositions) {
+                        if (totals[pp.playerId]) {
+                            totals[pp.playerId].total += periodSecs
+                            totals[pp.playerId].positions[pp.position] = (totals[pp.playerId].positions[pp.position] ?? 0) + periodSecs
+                        }
+                    }
+                }
+            }
+        })
+
+        return totals
+    }, [players, matches, allGameFormats, allSubEvents, allMatchPlans])
 
     // Total periods on court per player across all tournament match plans
     const planPeriodCounts = useMemo(() => {
@@ -277,27 +291,24 @@ export default function TournamentViewPage() {
                         </TableHeader>
                         <TableBody>
                           {(() => {
-                            const summaryPeriodSecs = (primaryGameFormat?.periodDuration ?? 0) * 60
-                            const planValues = players.map((p: any) => planPeriodCounts[p.id] ?? 0)
-                            const planMin = planValues.length ? Math.min(...planValues) : 0
-                            const planMax = planValues.length ? Math.max(...planValues) : 0
+                            const totalValues = players.map((p: any) => summaryTotals[p.id]?.total ?? 0)
+                            const totalMin = totalValues.length ? Math.min(...totalValues) : 0
+                            const totalMax = totalValues.length ? Math.max(...totalValues) : 0
                             return players.map((player: any) => {
-                              const actualTime = tournamentTimeTotals[player.id]?.total || 0
-                              const planned = planPeriodCounts[player.id] ?? 0
-                              const display = actualTime > 0 ? formatTime(actualTime) : planned > 0 && summaryPeriodSecs > 0 ? formatTime(planned * summaryPeriodSecs) : '—'
+                              const totalSecs = summaryTotals[player.id]?.total ?? 0
+                              const display = totalSecs > 0 ? formatTime(totalSecs) : '—'
                               return (
                               <TableRow key={player.id}>
                                 <TableCell className="font-medium">{player.name}</TableCell>
                                 <TableCell
                                   className="text-right font-mono font-semibold"
-                                  style={{ color: courtTimeColor(planPeriodCounts[player.id] ?? 0, planMin, planMax) }}
+                                  style={{ color: courtTimeColor(totalSecs, totalMin, totalMax) }}
                                 >
                                   {display}
                                 </TableCell>
                                 {positions.map((p: any) => {
-                                  const actualPosTime = tournamentTimeTotals[player.id]?.positions[p.abbreviation] || 0
-                                  const plannedPos = planPositionCounts[player.id]?.[p.abbreviation] ?? 0
-                                  const posDisplay = actualPosTime > 0 ? formatTime(actualPosTime) : plannedPos > 0 && summaryPeriodSecs > 0 ? formatTime(plannedPos * summaryPeriodSecs) : '—'
+                                  const posSecs = summaryTotals[player.id]?.positions[p.abbreviation] ?? 0
+                                  const posDisplay = posSecs > 0 ? formatTime(posSecs) : '—'
                                   return (
                                     <TableCell key={p.id} className="text-right font-mono">
                                       {posDisplay}

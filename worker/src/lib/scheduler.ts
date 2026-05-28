@@ -1,9 +1,8 @@
 const W_COURT = 10
-const W_ZONE_BALANCE = 5   // cross-game: within-player zone spread vs player's own other-zone average
-const W_ZONE = 3           // cross-game: squad-level zone spread vs squad average for this zone
+const W_CROSS_ZONE_BALANCE = 5  // cross-game within-player zone spread
+const W_CROSS_ZONE = 3          // cross-game squad-level zone spread
 const W_POSITION = 1
-const W_ZONE_STICKY = 20   // within-game: reward for staying in same zone as prior periods
-const W_ZONE_ADJACENT = 8  // within-game: reward for moving to a neighbouring zone (A↔C, D↔C)
+const W_CROSS_ADJACENT = 2      // cross-game adjacency preference for smooth zone transitions
 
 // Linear court layout: A — C — D
 // Centre is adjacent to both ends; Attack and Defence are NOT adjacent to each other
@@ -38,9 +37,9 @@ export function generateTournamentPlans(
 
   const allZoneKeys = [...new Set(positions.map(p => p.positionGroup ?? p.abbreviation))]
 
-  // Per-player running totals across games — only updated after each game ends.
-  // Driving tournament-level zone balance without penalising within-game zone stickiness
-  // is the reason this is NOT updated per-period like positionCounts is.
+  // Per-player running totals — only updated after each game ends, not per-period.
+  // Separating from currentGameZoneCounts is what allows within-game stickiness
+  // without penalising players for staying in the same zone.
   const courtPeriods: Record<string, number> = {}
   const positionCounts: Record<string, Record<string, number>> = {}
   const crossGameZoneCounts: Record<string, Record<string, number>> = {}
@@ -64,7 +63,6 @@ export function generateTournamentPlans(
 
   for (let gameIdx = 0; gameIdx < numberOfGames; gameIdx++) {
     const periodsThisGame: Record<string, number> = {}
-    // Within-game zone counts — reset each game, drives the zone stickiness bonus
     const currentGameZoneCounts: Record<string, Record<string, number>> = {}
 
     for (const p of players) {
@@ -81,15 +79,46 @@ export function generateTournamentPlans(
 
       for (const pos of positions) {
         const zoneKey = pos.positionGroup ?? pos.abbreviation
+        const isZoneFormat = pos.positionGroup !== null
+        const adjacentZones = isZoneFormat ? (ZONE_ADJACENCY[zoneKey] ?? []) : []
+
+        const unassigned = players.filter(p => !assignedThisPeriod.has(p.id))
+
+        // Pool selection enforces zone stickiness as a structural constraint, not just scoring.
+        // For 6-aside formats, a player's within-game zone history determines which priority
+        // tier they sit in — same zone > adjacent zone > fresh > over-limit equivalents.
+        // This ensures no combination of court-time or cross-game signals can override it.
+        let pool: SchedulerPlayer[]
+
+        if (isZoneFormat) {
+          const inZone = (p: SchedulerPlayer) => (currentGameZoneCounts[p.id][zoneKey] ?? 0) > 0
+          const inAdjacent = (p: SchedulerPlayer) =>
+            !inZone(p) && adjacentZones.some(z => (currentGameZoneCounts[p.id][z] ?? 0) > 0)
+          const eligible = (p: SchedulerPlayer) => periodsThisGame[p.id] < maxPeriodsPerGame
+
+          const sameZoneEligible    = unassigned.filter(p => eligible(p) && inZone(p))
+          const adjZoneEligible     = unassigned.filter(p => eligible(p) && inAdjacent(p))
+          const freshEligible       = unassigned.filter(p => eligible(p) && !inZone(p) && !inAdjacent(p))
+          const sameZoneOverLimit   = unassigned.filter(p => !eligible(p) && inZone(p))
+          const adjZoneOverLimit    = unassigned.filter(p => !eligible(p) && inAdjacent(p))
+
+          pool = sameZoneEligible.length > 0   ? sameZoneEligible  :
+                 adjZoneEligible.length > 0    ? adjZoneEligible   :
+                 freshEligible.length > 0      ? freshEligible     :
+                 sameZoneOverLimit.length > 0  ? sameZoneOverLimit :
+                 adjZoneOverLimit.length > 0   ? adjZoneOverLimit  :
+                 unassigned  // last resort: any remaining player
+        } else {
+          // 7-aside: no zone groups, use standard eligible-first rotation
+          const eligible = unassigned.filter(p => periodsThisGame[p.id] < maxPeriodsPerGame)
+          pool = eligible.length > 0 ? eligible : unassigned
+        }
+
         const n = players.length
-
         const avgCourt = players.reduce((s, p) => s + courtPeriods[p.id], 0) / n
-        const avgZone = players.reduce((s, p) => s + (crossGameZoneCounts[p.id][zoneKey] ?? 0), 0) / n
-        const avgPos = players.reduce((s, p) => s + (positionCounts[p.id][pos.abbreviation] ?? 0), 0) / n
+        const avgZone  = players.reduce((s, p) => s + (crossGameZoneCounts[p.id][zoneKey] ?? 0), 0) / n
+        const avgPos   = players.reduce((s, p) => s + (positionCounts[p.id][pos.abbreviation] ?? 0), 0) / n
         const otherZoneKeys = allZoneKeys.filter(z => z !== zoneKey)
-
-        const eligible = players.filter(p => !assignedThisPeriod.has(p.id) && periodsThisGame[p.id] < maxPeriodsPerGame)
-        const pool = eligible.length > 0 ? eligible : players.filter(p => !assignedThisPeriod.has(p.id))
 
         let best: SchedulerPlayer | null = null
         let bestScore = -Infinity
@@ -100,25 +129,16 @@ export function generateTournamentPlans(
             ? otherZoneKeys.reduce((s, z) => s + (crossGameZoneCounts[player.id][z] ?? 0), 0) / otherZoneKeys.length
             : playerThisZone
 
-          // Zone stickiness only for formats with position groups (6-aside)
-          let zoneStickyScore = 0
-          if (pos.positionGroup !== null) {
-            if ((currentGameZoneCounts[player.id][zoneKey] ?? 0) > 0) {
-              zoneStickyScore = W_ZONE_STICKY
-            } else {
-              const adjacentZones = ZONE_ADJACENCY[zoneKey] ?? []
-              if (adjacentZones.some(z => (currentGameZoneCounts[player.id][z] ?? 0) > 0)) {
-                zoneStickyScore = W_ZONE_ADJACENT
-              }
-            }
-          }
+          // Players with cross-game history in zones adjacent to this one are preferred
+          // — ensures smooth A→C→D transitions rather than A→D jumps between games
+          const adjacentZoneHistory = adjacentZones.reduce((s, z) => s + (crossGameZoneCounts[player.id][z] ?? 0), 0)
 
           const score =
             (avgCourt - courtPeriods[player.id]) * W_COURT +
-            (playerOtherZoneAvg - playerThisZone) * W_ZONE_BALANCE +
-            (avgZone - playerThisZone) * W_ZONE +
+            (playerOtherZoneAvg - playerThisZone) * W_CROSS_ZONE_BALANCE +
+            (avgZone - playerThisZone) * W_CROSS_ZONE +
             (avgPos - (positionCounts[player.id][pos.abbreviation] ?? 0)) * W_POSITION +
-            zoneStickyScore
+            adjacentZoneHistory * W_CROSS_ADJACENT
 
           if (score > bestScore) {
             bestScore = score
@@ -134,13 +154,13 @@ export function generateTournamentPlans(
         periodsThisGame[best.id]++
         positionCounts[best.id][pos.abbreviation]++
         currentGameZoneCounts[best.id][zoneKey] = (currentGameZoneCounts[best.id][zoneKey] ?? 0) + 1
-        // crossGameZoneCounts is intentionally NOT updated here — merged after the game ends
+        // crossGameZoneCounts intentionally NOT updated here — merged after the game ends
       }
 
       plans.push({ matchIndex: gameIdx, quarter: period, playerPositions })
     }
 
-    // Merge this game's zone history into cross-game totals (informs balance for subsequent games)
+    // Merge this game's zone history into cross-game totals (informs balance for future games)
     for (const p of players) {
       for (const zoneKey of allZoneKeys) {
         crossGameZoneCounts[p.id][zoneKey] += currentGameZoneCounts[p.id][zoneKey] ?? 0

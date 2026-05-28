@@ -148,7 +148,12 @@ tournaments.post('/:id/generate', async (c) => {
     'SELECT abbreviation, position_group FROM positions WHERE game_format_id = ? ORDER BY rowid'
   ).bind(body.gameFormatId).all()
   const positions = (positionsResult.results as Array<{ abbreviation: string; position_group: string | null }>)
-    .map(p => ({ abbreviation: p.abbreviation, positionGroup: p.position_group }))
+    .map(p => ({
+      abbreviation: p.abbreviation,
+      // Fall back to inferring group from abbreviation (e.g. "A1" → "A") when position_group
+      // is not stored in DB — covers all existing records created before position_group was written
+      positionGroup: p.position_group ?? (p.abbreviation.match(/^([ACD])\d+$/i)?.[1].toUpperCase() ?? null),
+    }))
 
   // Generate all period plans via greedy scheduler
   const plans = generateTournamentPlans(players, positions, gameFormat.number_of_periods, numberOfGames)

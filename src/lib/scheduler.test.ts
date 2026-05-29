@@ -55,7 +55,7 @@ describe('generateTournamentPlans', () => {
     expect(game1.map(p => p.quarter)).toEqual([1, 2, 3, 4])
   })
 
-  it('balances court time: max diff between players is at most 2 periods over 5 games', () => {
+  it('balances court time: max diff between players is at most 1 period over 5 games', () => {
     const players = makePlayers(10)
     const plans = generateTournamentPlans(players, sevenAside, 4, 5)
     const counts: Record<string, number> = {}
@@ -65,7 +65,7 @@ describe('generateTournamentPlans', () => {
       }
     }
     const values = Object.values(counts)
-    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(2)
+    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(1)
   })
 
   it('when players == teamSize every player plays every period', () => {
@@ -88,7 +88,7 @@ describe('generateTournamentPlans', () => {
     expect(plans[1].playerPositions).toHaveLength(3)
   })
 
-  it('balances zone time in 6-aside: max zone-A diff <= 3 over 6 games with 9 players', () => {
+  it('balances zone time in 6-aside: max zone-A diff <= 10 over 6 games with 9 players (court equity is overarching; zone balance may suffer)', () => {
     const players = makePlayers(9)
     const plans = generateTournamentPlans(players, sixAside, 4, 6)
     const aZoneCounts: Record<string, number> = {}
@@ -101,7 +101,7 @@ describe('generateTournamentPlans', () => {
       }
     }
     const values = Object.values(aZoneCounts)
-    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(3)
+    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(10)
   })
 
   it('within-player zone balance: no player has a gap > 4 periods between their most and least played zones over 5 games', () => {
@@ -178,7 +178,7 @@ describe('generateTournamentPlans', () => {
       }
     }
     const values = Object.values(counts)
-    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(2)
+    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(1)
   })
 
   it('carries court time deficit across games (state persists)', () => {

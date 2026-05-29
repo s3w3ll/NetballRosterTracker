@@ -1,4 +1,3 @@
-const W_COURT = 10
 const W_CROSS_ZONE_BALANCE = 5  // cross-game within-player zone spread
 const W_CROSS_ZONE = 3          // cross-game squad-level zone spread
 const W_POSITION = 1
@@ -37,7 +36,7 @@ export function generateTournamentPlans(
 
   const allZoneKeys = [...new Set(positions.map(p => p.positionGroup ?? p.abbreviation))]
 
-  // Per-player running totals — only updated after each game ends, not per-period.
+  // Per-player running totals — crossGameZoneCounts only updated after each game ends, not per-period.
   // Separating from currentGameZoneCounts is what allows within-game stickiness
   // without penalising players for staying in the same zone.
   const courtPeriods: Record<string, number> = {}
@@ -77,47 +76,52 @@ export function generateTournamentPlans(
       const assignedThisPeriod = new Set<string>()
       const playerPositions: Array<{ position: string; playerId: string }> = []
 
+      // Narrows a candidate set to those with the minimum tournament court periods.
+      // Court-time equity is the overarching constraint — it filters structurally before
+      // any zone/position preference can compete.
+      const equityPool = (base: SchedulerPlayer[]): SchedulerPlayer[] => {
+        if (base.length === 0) return base
+        const min = Math.min(...base.map(p => courtPeriods[p.id]))
+        return base.filter(p => courtPeriods[p.id] === min)
+      }
+
       for (const pos of positions) {
         const zoneKey = pos.positionGroup ?? pos.abbreviation
         const isZoneFormat = pos.positionGroup !== null
         const adjacentZones = isZoneFormat ? (ZONE_ADJACENCY[zoneKey] ?? []) : []
 
         const unassigned = players.filter(p => !assignedThisPeriod.has(p.id))
+        const withinLimit = unassigned.filter(p => periodsThisGame[p.id] < maxPeriodsPerGame)
 
-        // Pool selection enforces zone stickiness as a structural constraint, not just scoring.
-        // For 6-aside formats, a player's within-game zone history determines which priority
-        // tier they sit in — same zone > adjacent zone > fresh > over-limit equivalents.
-        // This ensures no combination of court-time or cross-game signals can override it.
+        // Court equity is always applied: prefer within-limit players, fall back to any
+        // unassigned when all have hit the per-game cap. equityPool is applied in both cases.
+        const base = withinLimit.length > 0 ? withinLimit : unassigned
+
         let pool: SchedulerPlayer[]
 
         if (isZoneFormat) {
           const inZone = (p: SchedulerPlayer) => (currentGameZoneCounts[p.id][zoneKey] ?? 0) > 0
           const inAdjacent = (p: SchedulerPlayer) =>
             !inZone(p) && adjacentZones.some(z => (currentGameZoneCounts[p.id][z] ?? 0) > 0)
-          const eligible = (p: SchedulerPlayer) => periodsThisGame[p.id] < maxPeriodsPerGame
 
-          const sameZoneEligible    = unassigned.filter(p => eligible(p) && inZone(p))
-          const adjZoneEligible     = unassigned.filter(p => eligible(p) && inAdjacent(p))
-          const freshEligible       = unassigned.filter(p => eligible(p) && !inZone(p) && !inAdjacent(p))
-          const sameZoneOverLimit   = unassigned.filter(p => !eligible(p) && inZone(p))
-          const adjZoneOverLimit    = unassigned.filter(p => !eligible(p) && inAdjacent(p))
-
-          pool = sameZoneEligible.length > 0   ? sameZoneEligible  :
-                 adjZoneEligible.length > 0    ? adjZoneEligible   :
-                 freshEligible.length > 0      ? freshEligible     :
-                 sameZoneOverLimit.length > 0  ? sameZoneOverLimit :
-                 adjZoneOverLimit.length > 0   ? adjZoneOverLimit  :
-                 unassigned  // last resort: any remaining player
+          // Court equity first (overarching), zone stickiness applied within that pool.
+          // Zone stickiness can be broken to honour the court-time constraint.
+          const cPool = equityPool(base)
+          const sameZone = cPool.filter(inZone)
+          const adjZone  = cPool.filter(p => !inZone(p) && inAdjacent(p))
+          const fresh    = cPool.filter(p => !inZone(p) && !inAdjacent(p))
+          pool = sameZone.length > 0 ? sameZone :
+                 adjZone.length > 0  ? adjZone  :
+                 fresh.length > 0    ? fresh    :
+                 cPool
         } else {
-          // 7-aside: no zone groups, use standard eligible-first rotation
-          const eligible = unassigned.filter(p => periodsThisGame[p.id] < maxPeriodsPerGame)
-          pool = eligible.length > 0 ? eligible : unassigned
+          // 7-aside: court equity among the base pool (within-limit preferred, else all unassigned)
+          pool = equityPool(base)
         }
 
         const n = players.length
-        const avgCourt = players.reduce((s, p) => s + courtPeriods[p.id], 0) / n
-        const avgZone  = players.reduce((s, p) => s + (crossGameZoneCounts[p.id][zoneKey] ?? 0), 0) / n
-        const avgPos   = players.reduce((s, p) => s + (positionCounts[p.id][pos.abbreviation] ?? 0), 0) / n
+        const avgZone = players.reduce((s, p) => s + (crossGameZoneCounts[p.id][zoneKey] ?? 0), 0) / n
+        const avgPos  = players.reduce((s, p) => s + (positionCounts[p.id][pos.abbreviation] ?? 0), 0) / n
         const otherZoneKeys = allZoneKeys.filter(z => z !== zoneKey)
 
         let best: SchedulerPlayer | null = null
@@ -134,7 +138,6 @@ export function generateTournamentPlans(
           const adjacentZoneHistory = adjacentZones.reduce((s, z) => s + (crossGameZoneCounts[player.id][z] ?? 0), 0)
 
           const score =
-            (avgCourt - courtPeriods[player.id]) * W_COURT +
             (playerOtherZoneAvg - playerThisZone) * W_CROSS_ZONE_BALANCE +
             (avgZone - playerThisZone) * W_CROSS_ZONE +
             (avgPos - (positionCounts[player.id][pos.abbreviation] ?? 0)) * W_POSITION +

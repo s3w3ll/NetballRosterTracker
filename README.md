@@ -49,26 +49,43 @@ Group multiple matches into tournaments with intelligent auto-generation:
 
 **Design insight: Tournament Auto-Generation**
 
-The tournament scheduler solves a complex optimization problem: given N players and M matches, assign positions to maximize fairness across two dimensions:
-1. **Total court time** (every player should get similar playing time)
-2. **Position variety** (players should rotate through different positions)
+The tournament scheduler solves a complex optimization problem: given N players and M matches, assign positions to maximize fairness across three dimensions:
+1. **Total court time equity** — every player gets the same number of periods on court across the tournament
+2. **Zone variety** — players rotate through Attack, Centre, and Defence zones across games
+3. **Zone continuity** — players don't jump between distant zones within a single game
 
-The algorithm uses a **greedy weighted scoring system** with per-game constraints:
+For each position in each period, the scheduler runs a two-step process:
 
-```
-Player Score = (Court Time Weight × Minutes Played) + 
-               (Position Zone Weight × Appearances in Zone)
-```
+**Step 1 — Equity filtering (hard constraint)**
 
-For each position in each period, the scheduler:
-1. **Filters** players who haven't exceeded per-game limits (e.g., max 3 periods in a 4-period game)
-2. **Scores** each eligible player based on historical court time and position frequency
-3. **Assigns** the lowest-scoring player (least played/most rested)
-4. **Updates** running totals for the next iteration
+Before any scoring, the candidate pool is narrowed to players with the *fewest total court periods* in the tournament so far. This is an absolute filter: no amount of zone-balance score can override court-time equity. Within a game, players who have already hit their per-game period cap are excluded first (cap = `floor(positions × periods / players)`).
+
+**Step 2 — Scored selection (within the equity pool)**
+
+Each candidate in the equity pool is scored on four components:
+
+| Component | Weight | What it favours |
+|-----------|--------|-----------------|
+| Cross-game zone balance (personal) | 5 | Players who have spent more time in *other* zones across previous games |
+| Cross-game zone balance (squad) | 3 | Players who have played this zone less than the squad average |
+| Adjacent zone history | 2 | Players with history in zones adjacent to this one (e.g., Centre before Attack) |
+| Position-level variety | 1 | Players who have played this specific position least |
+
+The **highest-scoring** player is assigned. This makes the score mean "most deserving of this position now" rather than a penalty.
+
+**Zone adjacency model**
+
+Positions are grouped into three zones with a linear court layout: Attack (A) — Centre (C) — Defence (D). Centre is adjacent to both ends; Attack and Defence are not adjacent to each other. The adjacency preference guides smooth zone transitions (A→C→D) between games rather than jarring cross-court jumps.
+
+**Two-layer zone tracking**
+
+The algorithm maintains two separate zone-count records per player:
+- `currentGameZoneCounts` — tracks zone history *within the current game* only, used for zone stickiness (once a player is in Centre this game, they're preferred for Centre positions again this game)
+- `crossGameZoneCounts` — tracks zone history *across completed games*, used for the cross-game balance score. Critically, this is only updated *after a game ends*, not per-period — so staying in the same zone within a game doesn't count against a player's variety score.
 
 **Why greedy vs. exhaustive search?** A tournament with 12 players and 5 matches has roughly 10^50 possible assignments. The greedy approach produces near-optimal results in milliseconds rather than hours, with diminishing returns from perfect optimization (a 2-minute difference across 200 minutes is negligible for grassroots netball).
 
-**Per-game fairness:** Without per-game limits, the algorithm could create "bench-heavy" matches where some players barely play. The per-game cap (e.g., 75% of periods) ensures every match has reasonable rotation, preventing frustration for players and parents.
+**Per-game fairness:** The per-game cap (`floor(positions × periods / players)`) ensures every match has reasonable rotation when the squad is larger than the on-court count, preventing any single player from dominating or being benched for an entire game.
 
 ### 🔐 Authentication
 Flexible sign-in options powered by Firebase Auth:

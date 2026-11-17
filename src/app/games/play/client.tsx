@@ -8,9 +8,11 @@ import { useRoster } from '@/api/hooks/use-rosters';
 import { useMatchPlansMultiple } from '@/api/hooks/use-match-plans-multiple';
 import { useSubEvents } from '@/api/hooks/use-sub-events';
 import SubEventPanel from '@/app/games/play/components/SubEventPanel';
+import PlanGuidePanel from '@/app/games/play/components/PlanGuidePanel';
 import MatchPlanEditor from '@/app/games/play/components/MatchPlanEditor';
 import { useTournaments } from '@/api/hooks/use-tournaments';
-import { applyLiveMove } from '@/lib/live-subs';
+import { applyLiveMoves, type LiveMoveEvent } from '@/lib/live-subs';
+import { plannedLineup, plannedSubGroups, nextPeriodCourt } from '@/lib/live-plan';
 import { loadLiveSession, saveLiveSession, catchUpLiveSession } from '@/lib/live-session';
 import {
   Table,
@@ -97,10 +99,26 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   // Initialisation happens once per match; persistence only starts after restored state is applied
   const sessionInitStarted = useRef(false)
   const [sessionLoaded, setSessionLoaded] = useState(false)
+  // Planned subs the coach chose not to make (keys like "2:300"); persisted with the live session
+  const [skippedPlanSubs, setSkippedPlanSubs] = useState<string[]>([])
 
   const { data: allSubEvents, create: createSubEvent, update: updateSubEvent, remove: removeSubEvent, bulkCreate: bulkCreateSubEvents } = useSubEvents(match.id)
   // The live tracker records and lists only what actually happened; the plan is separate.
   const subEvents = useMemo(() => allSubEvents?.filter(e => e.kind === 'actual') ?? null, [allSubEvents])
+
+  // The plan for this match — read-only here; applying it records actual events.
+  const planEvents = useMemo(() => allSubEvents?.filter(e => e.kind === 'plan') ?? [], [allSubEvents])
+  const playerIdSet = useMemo(() => new Set<string>((players ?? []).map((p: any) => p.id)), [players])
+  const positionAbbrs = useMemo(() => (positions ?? []).map((p: any) => p.abbreviation as string), [positions])
+  const lineupForPeriod = useCallback(
+    (period: number) => plannedLineup(planEvents, period, positionAbbrs, playerIdSet),
+    [planEvents, positionAbbrs, playerIdSet]
+  )
+  const currentPlannedLineup = useMemo(() => lineupForPeriod(currentPeriod), [lineupForPeriod, currentPeriod])
+  const currentPlannedSubs = useMemo(
+    () => plannedSubGroups(planEvents, currentPeriod, playerIdSet),
+    [planEvents, currentPeriod, playerIdSet]
+  )
 
   /** Records sub events; on failure tells the coach so they can re-add it from the list. */
   const saveEvents = useCallback((events: Array<{ period: number; secondsElapsed: number; playerId: string; positionAbbr: string | null }>) => {
@@ -164,6 +182,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
       setTime(s.remaining)
       setPlayerTimeInPosition(s.playerTimeInPosition)
       setIsActive(s.isActive)
+      setSkippedPlanSubs(s.skippedPlanSubs ?? [])
     } else {
       setCourtPositions(emptyCourt)
       setTime(durationSeconds)
@@ -181,9 +200,10 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
       remaining: time,
       isActive,
       playerTimeInPosition,
+      skippedPlanSubs,
       savedAt: Date.now(),
     })
-  }, [sessionLoaded, match.id, currentPeriod, courtPositions, time, isActive, playerTimeInPosition])
+  }, [sessionLoaded, match.id, currentPeriod, courtPositions, time, isActive, playerTimeInPosition, skippedPlanSubs])
 
   useEffect(() => {
     if (isActive) {
@@ -251,9 +271,16 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
     if (isActive) setIsActive(false)
 
     const nextPeriod = currentPeriod + 1
+    // Credit the outgoing lineup up to now before the court changes
+    updatePlayerTimes()
 
-    // Each period is calculated independently, so the carried-over lineup must be recorded at 0:00
-    saveEvents(Object.entries(courtPositions)
+    // Start the next period on its planned lineup if there is one, else carry the court over
+    const nextCourt = nextPeriodCourt(courtPositions, lineupForPeriod(nextPeriod))
+    setCourtPositions(nextCourt)
+    setSelectedPlayerId(null)
+
+    // Each period is calculated independently, so the starting lineup must be recorded at 0:00
+    saveEvents(Object.entries(nextCourt)
       .filter(([, playerId]) => playerId !== null)
       .map(([positionAbbr, playerId]) => ({
         period: nextPeriod,
@@ -320,8 +347,12 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
    * (including benching a replaced occupant). Side effects run here, not inside a
    * state updater, so React can't run them twice.
    */
-  const recordMove = (playerId: string, target: string | null) => {
-    const { court, events } = applyLiveMove(courtPositions, playerId, target)
+  const recordMove = (playerId: string, target: string | null) =>
+    recordMoves([{ playerId, positionAbbr: target }])
+
+  /** Applies one or more simultaneous moves (a drag, or a planned rotation) and records the net change. */
+  const recordMoves = (moves: LiveMoveEvent[]) => {
+    const { court, events } = applyLiveMoves(courtPositions, moves)
     if (events.length === 0) return
     updatePlayerTimes()
     const secondsElapsed = Math.max(0, periodDuration.current - time)
@@ -434,6 +465,18 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
         </Button>
       </div>
     </div>
+    <PlanGuidePanel
+      period={currentPeriod}
+      elapsedSeconds={Math.max(0, periodDuration.current - time)}
+      periodDurationSeconds={periodDuration.current}
+      court={courtPositions}
+      lineup={currentPlannedLineup}
+      groups={currentPlannedSubs}
+      skipped={new Set(skippedPlanSubs)}
+      players={players ?? []}
+      onApply={moves => { recordMoves(moves); setSelectedPlayerId(null) }}
+      onSkip={key => setSkippedPlanSubs(prev => [...prev, key])}
+    />
     <div className="flex flex-col md:flex-row gap-6 items-start">
 
       {/* ── Court (left, 60% of page width) ────────────────────── */}

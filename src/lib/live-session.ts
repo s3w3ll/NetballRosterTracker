@@ -13,6 +13,8 @@ export interface LiveSession {
   isActive: boolean
   /** playerId → positionAbbr → seconds (on-screen tally) */
   playerTimeInPosition: Record<string, Record<string, number>>
+  /** Planned sub groups the coach skipped (e.g. "2:300"); optional for older snapshots */
+  skippedPlanSubs?: string[]
   /** Epoch ms when this snapshot was written */
   savedAt: number
 }

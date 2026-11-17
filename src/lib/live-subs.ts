@@ -51,3 +51,34 @@ export function applyLiveMove(
 
   return { court: next, events }
 }
+
+/**
+ * One event per player whose spot differs between two court states — the
+ * player's final location. Used when several moves happen at the same instant:
+ * recording only the end state avoids same-timestamp events whose order the
+ * database doesn't guarantee.
+ */
+export function diffCourts(before: CourtPositions, after: CourtPositions): LiveMoveEvent[] {
+  const locate = (court: CourtPositions) => {
+    const where = new Map<string, string>()
+    for (const [pos, pid] of Object.entries(court)) if (pid) where.set(pid, pos)
+    return where
+  }
+  const was = locate(before)
+  const now = locate(after)
+  const events: LiveMoveEvent[] = []
+  for (const pid of new Set([...was.keys(), ...now.keys()])) {
+    const to = now.get(pid) ?? null
+    if ((was.get(pid) ?? null) !== to) events.push({ playerId: pid, positionAbbr: to })
+  }
+  return events
+}
+
+/** Applies several moves at the same instant (e.g. a planned rotation) and returns the net events. */
+export function applyLiveMoves(
+  court: CourtPositions,
+  moves: LiveMoveEvent[]
+): { court: CourtPositions; events: LiveMoveEvent[] } {
+  const after = moves.reduce((c, m) => applyLiveMove(c, m.playerId, m.positionAbbr).court, court)
+  return { court: after, events: diffCourts(court, after) }
+}

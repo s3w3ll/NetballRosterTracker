@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyLiveMove, type CourtPositions } from './live-subs'
+import { applyLiveMove, applyLiveMoves, type CourtPositions } from './live-subs'
 import { calculatePlayerTimes } from './time-calculations'
 
 const court = (c: Partial<CourtPositions>): CourtPositions => ({ GS: null, GA: null, C: null, ...c })
@@ -65,5 +65,29 @@ describe('applyLiveMove', () => {
     )
     expect(times.alice.total).toBe(300)
     expect(times.bea.total).toBe(300)
+  })
+})
+
+describe('applyLiveMoves', () => {
+  it('records one net event per player for a simultaneous rotation', () => {
+    // Plan at 5:00: Bea on for Alice at GS, Alice moves to GA, Cara (at GA) to bench
+    const start = court({ GS: 'alice', GA: 'cara' })
+    const r = applyLiveMoves(start, [
+      { playerId: 'bea', positionAbbr: 'GS' },
+      { playerId: 'alice', positionAbbr: 'GA' },
+      { playerId: 'cara', positionAbbr: null },
+    ])
+    expect(r.court).toEqual(court({ GS: 'bea', GA: 'alice' }))
+    expect(r.events).toHaveLength(3)
+    expect(r.events).toEqual(expect.arrayContaining([
+      { playerId: 'bea', positionAbbr: 'GS' },
+      { playerId: 'alice', positionAbbr: 'GA' },
+      { playerId: 'cara', positionAbbr: null },
+    ]))
+  })
+
+  it('records nothing when the moves leave the court unchanged', () => {
+    const c = court({ GS: 'alice' })
+    expect(applyLiveMoves(c, [{ playerId: 'alice', positionAbbr: 'GS' }]).events).toEqual([])
   })
 })

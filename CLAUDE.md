@@ -22,6 +22,8 @@ npm run dev          # wrangler dev (local)
 npm run deploy       # wrangler deploy → netball-roster-tracker.forgesync.workers.dev
 npm run db:apply     # apply schema.sql to local D1
 npm run db:apply:remote  # apply schema.sql to remote D1
+npm run db:migrate   # apply worker/migrations/*.sql to local D1 (tracked, run after db:apply)
+npm run db:migrate:remote  # same for remote D1 — run BEFORE pushing code that needs the migration
 npm run typecheck    # tsc --noEmit (1 known pre-existing error in auth.ts)
 ```
 
@@ -78,6 +80,8 @@ Keys are prefixed `courttime:` internally. **Always clear `tournamentId` when en
 - **Static export + client components**: Pages that use Firebase hooks need a `loader.tsx` (lazy-imports `client.tsx` via `useEffect`) to avoid SSG failures
 - **D1 game format seeds**: Default formats use `uuidv4()` IDs — use upsert/ignore pattern, not plain INSERT
 - **Standalone vs tournament plans**: `MatchPlanEditor` checks `Boolean(tournamentId)` to switch modes. Tournament mode buffers saves; standalone mode saves immediately on drag-drop.
+- **Plan vs actual sub events**: `sub_events.kind` is `'plan'` (plan editor, scheduler) or `'actual'` (live tracker). Never mix them in one calculation — use `projectedEvents()` from `src/lib/time-calculations.ts` (actual for played periods, plan for the rest). `match_plans` is legacy: no longer written or read by the app.
+- **Migrations aren't run by CI**: GitHub Actions deploys the Worker but doesn't touch D1. Apply `npm run db:migrate:remote` before pushing code that depends on a new migration.
 - **`GET /api/matches?standalone=true`**: Returns only non-tournament matches (LEFT JOIN anti-join on `tournament_matches`)
 
 ## Route Map

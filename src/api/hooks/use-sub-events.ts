@@ -110,5 +110,15 @@ export function useSubEvents(matchId: string | null | undefined) {
     await refetch()
   }, [matchId, getIdToken, refetch])
 
-  return { data, isLoading, error, refetch, create, update, remove, bulkCreate }
+  /** Atomically replaces this match's planned starting lineups; live (actual) events are untouched. */
+  const replacePlanLineups = useCallback(async (lineups: Array<{ period: number; playerId: string; positionAbbr: string }>) => {
+    if (!matchId) return
+    await ensureOk(await apiFetch(`/api/matches/${matchId}/sub-events/plan-lineups`, getIdToken, {
+      method: 'PUT',
+      body: JSON.stringify({ events: lineups.map(e => ({ id: uuidv4(), ...e })) }),
+    }))
+    await refetch()
+  }, [matchId, getIdToken, refetch])
+
+  return { data, isLoading, error, refetch, create, update, remove, bulkCreate, replacePlanLineups }
 }

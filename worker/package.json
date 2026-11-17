@@ -7,6 +7,8 @@
     "deploy": "wrangler deploy",
     "db:apply": "wrangler d1 execute netball-roster-tracker-db --file=./schema.sql",
     "db:apply:remote": "wrangler d1 execute netball-roster-tracker-db --remote --file=./schema.sql",
+    "db:migrate": "wrangler d1 migrations apply netball-roster-tracker-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply netball-roster-tracker-db --remote",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

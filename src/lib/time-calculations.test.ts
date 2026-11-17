@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calculatePlayerTimes, groupPositionTimes } from './time-calculations'
+import { calculatePlayerTimes, groupPositionTimes, projectedEvents, playedPeriods } from './time-calculations'
 
 // Minimal SubEvent shape used in tests
 const ev = (
@@ -94,5 +94,37 @@ describe('groupPositionTimes', () => {
     const times = { A1: 300, A2: 300, GS: 720 }
     const groups: Record<string, string | null> = { A1: 'A', A2: 'A', GS: null }
     expect(groupPositionTimes(times, groups)).toEqual({ A: 600, GS: 720 })
+  })
+})
+
+describe('projectedEvents', () => {
+  const k = (kind: 'plan' | 'actual', period: number, s: number, playerId: string, pos: string | null) =>
+    ({ ...ev(period, s, playerId, pos), kind })
+
+  it('uses the plan when nothing has been played', () => {
+    const events = [k('plan', 1, 0, 'alice', 'GS'), k('plan', 2, 0, 'bea', 'GS')]
+    expect(projectedEvents(events)).toEqual(events)
+  })
+
+  it('replaces a played period with actuals and keeps the plan for the rest', () => {
+    const events = [
+      k('plan', 1, 0, 'alice', 'GS'),
+      k('plan', 2, 0, 'alice', 'GS'),
+      k('actual', 1, 0, 'cara', 'GS'),   // coach started Cara instead
+    ]
+    const times = calculatePlayerTimes(projectedEvents(events), 600)
+    expect(times.cara.total).toBe(600)   // Q1 actual
+    expect(times.alice.total).toBe(600)  // Q2 planned only — not double counted with Q1
+    expect(playedPeriods(events)).toEqual([1])
+  })
+
+  it('ignores planned mid-period subs in a played period', () => {
+    const events = [
+      k('plan', 1, 0, 'alice', 'GS'), k('plan', 1, 300, 'bea', 'GS'), k('plan', 1, 300, 'alice', null),
+      k('actual', 1, 0, 'alice', 'GS'),  // sub never happened
+    ]
+    const times = calculatePlayerTimes(projectedEvents(events), 600)
+    expect(times.alice.total).toBe(600)
+    expect(times.bea).toBeUndefined()
   })
 })

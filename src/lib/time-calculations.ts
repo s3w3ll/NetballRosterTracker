@@ -1,6 +1,9 @@
-import type { SubEvent } from '@/api/types'
+import type { SubEvent, SubEventKind } from '@/api/types'
 
 export type { SubEvent } from '@/api/types'
+
+/** The fields time calculations need — lets callers pass plan, actual or test events. */
+type TimedEvent = Pick<SubEvent, 'period' | 'secondsElapsed' | 'playerId' | 'positionAbbr'>
 
 export type PlayerTimeTotals = Record<string, {
   total: number
@@ -14,13 +17,13 @@ export type PlayerTimeTotals = Record<string, {
  * @param periodDuration  Duration of one period in seconds.
  */
 export function calculatePlayerTimes(
-  subEvents: SubEvent[],
+  subEvents: TimedEvent[],
   periodDuration: number
 ): PlayerTimeTotals {
   const totals: PlayerTimeTotals = {}
 
   // Group events by period
-  const byPeriod = new Map<number, SubEvent[]>()
+  const byPeriod = new Map<number, TimedEvent[]>()
   for (const event of subEvents) {
     if (!byPeriod.has(event.period)) byPeriod.set(event.period, [])
     byPeriod.get(event.period)!.push(event)
@@ -28,7 +31,7 @@ export function calculatePlayerTimes(
 
   for (const [, periodEvents] of byPeriod) {
     // Group by player within this period
-    const byPlayer = new Map<string, SubEvent[]>()
+    const byPlayer = new Map<string, TimedEvent[]>()
     for (const event of periodEvents) {
       if (!byPlayer.has(event.playerId)) byPlayer.set(event.playerId, [])
       byPlayer.get(event.playerId)!.push(event)
@@ -96,4 +99,20 @@ export function groupPositionTimes(
     result[group] = (result[group] || 0) + seconds
   }
   return result
+}
+
+/**
+ * "Actual so far + plan for the rest": for each period, uses the actual (live)
+ * events if any were recorded for that period, otherwise the planned events.
+ * A period in progress counts as played, with its current lineup assumed to
+ * finish the period. Feed the result to calculatePlayerTimes.
+ */
+export function projectedEvents<T extends { period: number; kind: SubEventKind }>(events: T[]): T[] {
+  const playedPeriods = new Set(events.filter(e => e.kind === 'actual').map(e => e.period))
+  return events.filter(e => (playedPeriods.has(e.period) ? e.kind === 'actual' : e.kind === 'plan'))
+}
+
+/** Periods that have any actual (live) events, ascending. */
+export function playedPeriods(events: Array<{ period: number; kind: SubEventKind }>): number[] {
+  return [...new Set(events.filter(e => e.kind === 'actual').map(e => e.period))].sort((a, b) => a - b)
 }

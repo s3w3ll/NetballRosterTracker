@@ -98,12 +98,14 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   const sessionInitStarted = useRef(false)
   const [sessionLoaded, setSessionLoaded] = useState(false)
 
-  const { data: subEvents, create: createSubEvent, update: updateSubEvent, remove: removeSubEvent, bulkCreate: bulkCreateSubEvents } = useSubEvents(match.id)
+  const { data: allSubEvents, create: createSubEvent, update: updateSubEvent, remove: removeSubEvent, bulkCreate: bulkCreateSubEvents } = useSubEvents(match.id)
+  // The live tracker records and lists only what actually happened; the plan is separate.
+  const subEvents = useMemo(() => allSubEvents?.filter(e => e.kind === 'actual') ?? null, [allSubEvents])
 
   /** Records sub events; on failure tells the coach so they can re-add it from the list. */
   const saveEvents = useCallback((events: Array<{ period: number; secondsElapsed: number; playerId: string; positionAbbr: string | null }>) => {
     if (events.length === 0) return
-    bulkCreateSubEvents(events).catch((err: Error) => {
+    bulkCreateSubEvents(events.map(e => ({ ...e, kind: 'actual' as const }))).catch((err: Error) => {
       toast({
         variant: 'destructive',
         title: 'Substitution not saved',
@@ -657,6 +659,7 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 
     {subEvents && (
       <SubEventPanel
+        kind="actual"
         currentPeriod={currentPeriod}
         numberOfPeriods={gameFormat?.numberOfPeriods ?? 4}
         subEvents={subEvents}
@@ -1040,7 +1043,6 @@ export default function GamePage() {
   const { data: match, isLoading: isMatchLoading } = useMatch(gameId);
   const { data: gameFormat, isLoading: isGameFormatLoading } = useGameFormat(match?.gameFormatId);
   const { data: roster, isLoading: isRosterLoading } = useRoster(match?.team1RosterId);
-  const { data: currentGamePlans } = useMatchPlansMultiple(gameId ? [gameId] : []);
 
   const positions = gameFormat?.positions ?? [];
   const players = roster?.players ?? [];
@@ -1119,7 +1121,6 @@ export default function GamePage() {
             positions={positions}
             players={players}
             tournamentId={tournamentId}
-            initialMatchPlans={currentGamePlans ?? undefined}
             standalone={standalone}
           />
         </TabsContent>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { type SubEvent } from '@/api/types'
+import { type SubEvent, type SubEventKind } from '@/api/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,6 +10,8 @@ import { ChevronDown, Plus, Trash2, Pencil, Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface SubEventPanelProps {
+  /** Which stream this panel shows and adds to: planned subs or what happened live */
+  kind: SubEventKind
   currentPeriod: number
   numberOfPeriods: number
   subEvents: SubEvent[]
@@ -36,6 +38,7 @@ function mmssToSecs(value: string): number | null {
 }
 
 export default function SubEventPanel({
+  kind,
   currentPeriod,
   numberOfPeriods,
   subEvents,
@@ -78,6 +81,7 @@ export default function SubEventPanel({
       secondsElapsed: secs,
       playerId: addPlayerId,
       positionAbbr: addPosition === 'bench' ? null : addPosition,
+      kind,
     })
     setShowAddForm(false)
     setAddTime('00:00')
@@ -93,7 +97,7 @@ export default function SubEventPanel({
       >
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium">
-            Q{currentPeriod} Substitutions ({periodEvents.length})
+            Q{currentPeriod} {kind === 'plan' ? 'Planned substitutions' : 'Substitutions'} ({periodEvents.length})
           </CardTitle>
           <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', isOpen && 'rotate-180')} />
         </div>

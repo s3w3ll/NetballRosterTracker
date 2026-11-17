@@ -3,9 +3,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSubEvents } from '@/api/hooks/use-sub-events'
-import { useFirebase } from '@/firebase'
-import { apiJSON } from '@/api/client'
-import { type MatchPlan } from '@/api/types'
+import { type SubEvent } from '@/api/types'
 import SubEventPanel from './SubEventPanel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -15,7 +13,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { Users, Copy, ChevronLeft, Save } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { v4 as uuidv4 } from 'uuid'
 
 // Reuse the same court slot map as the live game tracker
 const NETBALL_COURT_SLOTS: Record<string, { x: number; y: number }> = {
@@ -32,19 +29,22 @@ interface MatchPlanEditorProps {
   gameFormat: any
   positions: any[]
   players: any[]
-  /** Pre-populate the editor from these match_plans when no sub-events exist (auto-generated games) */
-  initialMatchPlans?: MatchPlan[]
   /** When set, show Save + Back-to-Tournament buttons and buffer all changes locally */
   tournamentId?: string | null
   /** When true (plan created from /plans/new), show Done → /plans header; saves are still real-time */
   standalone?: boolean
 }
 
-export default function MatchPlanEditor({ match, gameFormat, positions, players, initialMatchPlans, tournamentId, standalone }: MatchPlanEditorProps) {
+export default function MatchPlanEditor({ match, gameFormat, positions, players, tournamentId, standalone }: MatchPlanEditorProps) {
   const router = useRouter()
   const { toast } = useToast()
-  const { getIdToken } = useFirebase()
-  const { data: subEvents, isLoading, create, update, remove, bulkCreate } = useSubEvents(match.id)
+  const { data: allSubEvents, isLoading, create: createAny, update, remove, bulkCreate: bulkCreateAny, replacePlanLineups } = useSubEvents(match.id)
+
+  // The editor only ever sees and writes the plan — live (actual) events belong to the live tracker.
+  const subEvents = useMemo(() => allSubEvents?.filter(e => e.kind === 'plan') ?? null, [allSubEvents])
+  type NewPlanEvent = Omit<SubEvent, 'id' | 'matchId' | 'kind'>
+  const create = useCallback((e: NewPlanEvent) => createAny({ ...e, kind: 'plan' }), [createAny])
+  const bulkCreate = useCallback((events: NewPlanEvent[]) => bulkCreateAny(events.map(e => ({ ...e, kind: 'plan' as const }))), [bulkCreateAny])
   const [activePeriod, setActivePeriod] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
@@ -93,21 +93,12 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players,
       return
     }
 
-    // No sub-events — seed from initialMatchPlans (auto-generated tournament)
+    // No planned lineup yet — start empty (generated tournaments already have plan events)
     const draft: DraftLineups = {}
     for (const period of periods) {
       draft[period] = {}
       for (const pos of positions) {
         draft[period][pos.abbreviation] = null
-      }
-    }
-    if (initialMatchPlans) {
-      for (const plan of initialMatchPlans) {
-        for (const pp of plan.playerPositions) {
-          if (draft[plan.quarter]) {
-            draft[plan.quarter][pp.position] = pp.playerId
-          }
-        }
       }
     }
     setDraftLineups(draft)
@@ -250,24 +241,14 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players,
     if (!draftLineups) return
     setIsSaving(true)
     try {
-      // Remove all existing starting-lineup sub-events for this match
-      const toDelete = (subEvents ?? []).filter(e => e.secondsElapsed === 0)
-      await Promise.all(toDelete.map(e => remove(e.id)))
-
-      // Create new sub-events from draft
-      const newEvents: Array<{ period: number; secondsElapsed: number; playerId: string; positionAbbr: string }> = []
+      // Replace planned starting lineups in one atomic request (live data is untouched)
+      const lineups: Array<{ period: number; playerId: string; positionAbbr: string }> = []
       for (const [periodStr, lineup] of Object.entries(draftLineups)) {
-        const period = Number(periodStr)
         for (const [positionAbbr, playerId] of Object.entries(lineup)) {
-          if (playerId) newEvents.push({ period, secondsElapsed: 0, playerId, positionAbbr })
+          if (playerId) lineups.push({ period: Number(periodStr), playerId, positionAbbr })
         }
       }
-      if (newEvents.length > 0) {
-        await apiJSON(`/api/matches/${match.id}/sub-events/bulk`, getIdToken, {
-          method: 'POST',
-          body: JSON.stringify({ events: newEvents.map(e => ({ id: uuidv4(), ...e })) }),
-        })
-      }
+      await replacePlanLineups(lineups)
 
       toast({ title: 'Plan saved' })
       router.push('/tournaments/view')
@@ -510,6 +491,7 @@ export default function MatchPlanEditor({ match, gameFormat, positions, players,
             {/* Mid-period substitutions — only shown in non-tournament (live edit) mode */}
             {!tournamentMode && subEvents && (
               <SubEventPanel
+                kind="plan"
                 currentPeriod={period}
                 numberOfPeriods={gameFormat?.numberOfPeriods ?? 4}
                 subEvents={subEvents.filter(e => e.secondsElapsed > 0)}

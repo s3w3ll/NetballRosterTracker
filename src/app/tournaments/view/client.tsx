@@ -6,10 +6,9 @@ import { useMatches } from '@/api/hooks/use-matches';
 import { useTournament } from '@/api/hooks/use-tournaments';
 import { useRoster } from '@/api/hooks/use-rosters';
 import { useGameFormats, useGameFormat } from '@/api/hooks/use-game-formats';
-import { useMatchPlansMultiple } from '@/api/hooks/use-match-plans-multiple';
 import { apiJSON } from '@/api/client';
-import { normalizeSubEvent } from '@/api/types';
-import { calculatePlayerTimes } from '@/lib/time-calculations';
+import { normalizeSubEvent, type SubEvent } from '@/api/types';
+import { calculatePlayerTimes, projectedEvents, playedPeriods } from '@/lib/time-calculations';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -69,12 +68,11 @@ export default function TournamentViewPage() {
     const { data: roster, isLoading: isRosterLoading } = useRoster(rosterIds[0] ?? null);
     const { data: primaryGameFormat, isLoading: isFormatLoading } = useGameFormat(gameFormatIds[0] ?? null);
     const { data: allGameFormats, isLoading: areAllFormatsLoading } = useGameFormats();
-    const { data: allMatchPlans, isLoading: arePlansLoading } = useMatchPlansMultiple(tournament?.matchIds ?? []);
 
     const players = roster?.players ?? [];
     const positions = primaryGameFormat?.positions ?? [];
 
-    const [allSubEvents, setAllSubEvents] = useState<any[]>([]);
+    const [allSubEvents, setAllSubEvents] = useState<SubEvent[]>([]);
     const [areSubEventsLoading, setAreSubEventsLoading] = useState(false);
 
     useEffect(() => {
@@ -86,111 +84,47 @@ export default function TournamentViewPage() {
             .finally(() => setAreSubEventsLoading(false));
     }, [matches, getIdToken]);
 
-    // Per-match: use sub-events if starting-lineup events exist, otherwise fall back to match_plans.
-    // This ensures the summary stays correct after some (but not all) games have been manually edited.
-    const summaryTotals = useMemo(() => {
-        if (!players.length || !matches.length || !allGameFormats) return {} as MatchTimeCalculations
-
-        const totals: MatchTimeCalculations = players.reduce((acc: any, p: any) => ({ ...acc, [p.id]: { total: 0, positions: {} } }), {})
-
-        matches.forEach((match: any) => {
+    // Per match: actual (live) time for quarters that have been played, planned time for the rest.
+    const matchProjections = useMemo(() => {
+        const result: Record<string, { times: MatchTimeCalculations; played: number[] }> = {}
+        if (!allGameFormats) return result
+        for (const match of matches) {
             const gameFormat = allGameFormats.find(f => f.id === match.gameFormatId)
-            if (!gameFormat) return
-            const periodSecs = gameFormat.periodDuration * 60
-            const matchSubEvents = allSubEvents.filter(e => e.matchId === match.id)
-            const hasStartingLineup = matchSubEvents.some(e => e.secondsElapsed === 0)
+            if (!gameFormat) continue
+            const matchEvents = allSubEvents.filter(e => e.matchId === match.id)
+            result[match.id] = {
+                times: calculatePlayerTimes(projectedEvents(matchEvents), gameFormat.periodDuration * 60),
+                played: playedPeriods(matchEvents),
+            }
+        }
+        return result
+    }, [matches, allGameFormats, allSubEvents])
 
-            if (hasStartingLineup) {
-                const matchTimes = calculatePlayerTimes(matchSubEvents, periodSecs)
-                Object.entries(matchTimes).forEach(([playerId, timeInfo]) => {
-                    if (totals[playerId]) {
-                        totals[playerId].total += timeInfo.total
-                        Object.entries(timeInfo.positions).forEach(([pos, time]) => {
-                            totals[playerId].positions[pos] = (totals[playerId].positions[pos] ?? 0) + (time as number)
-                        })
-                    }
-                })
-            } else {
-                const matchPlanRows = allMatchPlans?.filter(p => p.matchId === match.id) ?? []
-                for (const plan of matchPlanRows) {
-                    for (const pp of plan.playerPositions) {
-                        if (totals[pp.playerId]) {
-                            totals[pp.playerId].total += periodSecs
-                            totals[pp.playerId].positions[pp.position] = (totals[pp.playerId].positions[pp.position] ?? 0) + periodSecs
-                        }
-                    }
+    const summaryTotals = useMemo(() => {
+        const totals: MatchTimeCalculations = players.reduce((acc: any, p: any) => ({ ...acc, [p.id]: { total: 0, positions: {} } }), {})
+        for (const { times } of Object.values(matchProjections)) {
+            for (const [playerId, timeInfo] of Object.entries(times)) {
+                if (!totals[playerId]) continue
+                totals[playerId].total += timeInfo.total
+                for (const [pos, secs] of Object.entries(timeInfo.positions)) {
+                    totals[playerId].positions[pos] = (totals[playerId].positions[pos] ?? 0) + secs
                 }
             }
-        })
-
+        }
         return totals
-    }, [players, matches, allGameFormats, allSubEvents, allMatchPlans])
+    }, [players, matchProjections])
 
-    // Total periods on court per player across all tournament match plans
-    const planPeriodCounts = useMemo(() => {
-      if (!allMatchPlans) return {} as Record<string, number>
-      const counts: Record<string, number> = {}
-      for (const plan of allMatchPlans) {
-        for (const pp of plan.playerPositions) {
-          counts[pp.playerId] = (counts[pp.playerId] ?? 0) + 1
-        }
-      }
-      return counts
-    }, [allMatchPlans])
-
-    // Periods on court per player per match, keyed by matchId then playerId
-    const planPeriodsByMatch = useMemo(() => {
-      if (!allMatchPlans) return {} as Record<string, Record<string, number>>
-      const result: Record<string, Record<string, number>> = {}
-      for (const plan of allMatchPlans) {
-        if (!result[plan.matchId]) result[plan.matchId] = {}
-        for (const pp of plan.playerPositions) {
-          result[plan.matchId][pp.playerId] = (result[plan.matchId][pp.playerId] ?? 0) + 1
-        }
-      }
-      return result
-    }, [allMatchPlans])
-
-    // Periods per player per position across all tournament match plans
-    const planPositionCounts = useMemo(() => {
-      if (!allMatchPlans) return {} as Record<string, Record<string, number>>
-      const counts: Record<string, Record<string, number>> = {}
-      for (const plan of allMatchPlans) {
-        for (const pp of plan.playerPositions) {
-          if (!counts[pp.playerId]) counts[pp.playerId] = {}
-          counts[pp.playerId][pp.position] = (counts[pp.playerId][pp.position] ?? 0) + 1
-        }
-      }
-      return counts
-    }, [allMatchPlans])
-
-    // Per-period position grid: matchId → period → playerId → posAbbr
+    // Planned starting lineups: matchId → period → playerId → posAbbr
     const planGridByMatch = useMemo(() => {
-      if (!allMatchPlans) return {} as Record<string, Record<number, Record<string, string>>>
       const result: Record<string, Record<number, Record<string, string>>> = {}
-      for (const plan of allMatchPlans) {
-        if (!result[plan.matchId]) result[plan.matchId] = {}
-        if (!result[plan.matchId][plan.quarter]) result[plan.matchId][plan.quarter] = {}
-        for (const pp of plan.playerPositions) {
-          result[plan.matchId][plan.quarter][pp.playerId] = pp.position
-        }
+      for (const e of allSubEvents) {
+        if (e.kind !== 'plan' || e.secondsElapsed !== 0 || !e.positionAbbr) continue
+        result[e.matchId] ??= {}
+        result[e.matchId][e.period] ??= {}
+        result[e.matchId][e.period][e.playerId] = e.positionAbbr
       }
       return result
-    }, [allMatchPlans])
-
-    // Periods per player per position, broken down per match
-    const planPositionsByMatch = useMemo(() => {
-      if (!allMatchPlans) return {} as Record<string, Record<string, Record<string, number>>>
-      const result: Record<string, Record<string, Record<string, number>>> = {}
-      for (const plan of allMatchPlans) {
-        if (!result[plan.matchId]) result[plan.matchId] = {}
-        for (const pp of plan.playerPositions) {
-          if (!result[plan.matchId][pp.playerId]) result[plan.matchId][pp.playerId] = {}
-          result[plan.matchId][pp.playerId][pp.position] = (result[plan.matchId][pp.playerId][pp.position] ?? 0) + 1
-        }
-      }
-      return result
-    }, [allMatchPlans])
+    }, [allSubEvents])
 
     const handleAddMatch = () => {
         router.push('/tournaments/add-match');
@@ -217,7 +151,7 @@ export default function TournamentViewPage() {
         }
     }, [tournament, getIdToken, router, toast]);
 
-    const isLoading = isTournamentLoading || areMatchesLoading || isRosterLoading || isFormatLoading || areAllFormatsLoading || areSubEventsLoading || arePlansLoading;
+    const isLoading = isTournamentLoading || areMatchesLoading || isRosterLoading || isFormatLoading || areAllFormatsLoading || areSubEventsLoading;
 
     if (isLoading) {
         return (
@@ -278,7 +212,7 @@ export default function TournamentViewPage() {
             <Card className="mb-8">
                 <CardHeader>
                     <CardTitle>Tournament Summary</CardTitle>
-                    <CardDescription>Cumulative player court time across all games in the tournament.</CardDescription>
+                    <CardDescription>Court time across all games: actual time for quarters already played, planned time for the rest.</CardDescription>
                 </CardHeader>
                 <CardContent>
                      <Table>
@@ -327,15 +261,20 @@ export default function TournamentViewPage() {
                 <h2 className="text-2xl font-bold font-headline">Games in this Tournament</h2>
                 {matches.map((match: any) => {
                      const gameFormat = allGameFormats?.find(f => f.id === match.gameFormatId);
-                     const matchSubEvents = allSubEvents.filter(e => e.matchId === match.id);
-                     const matchTimes = gameFormat
-                        ? calculatePlayerTimes(matchSubEvents, gameFormat.periodDuration * 60)
-                        : {};
+                     const projection = matchProjections[match.id];
+                     const matchTimes = projection?.times ?? {};
+                     const played = projection?.played ?? [];
+                     const totalPeriods = gameFormat?.numberOfPeriods ?? 0;
+                     const status = played.length === 0
+                        ? 'Not played yet — showing the plan'
+                        : played.length >= totalPeriods
+                            ? 'Played'
+                            : `Played Q${played.join(', Q')} · rest planned`;
                     return (
                         <Card key={match.id}>
                             <CardHeader>
                                 <CardTitle>{match.name}</CardTitle>
-                                <CardDescription>Roster: {roster?.name || '...'} | Format: {gameFormat?.name || '...'}</CardDescription>
+                                <CardDescription>Roster: {roster?.name || '...'} | Format: {gameFormat?.name || '...'} | {status}</CardDescription>
                             </CardHeader>
                             <CardContent>
                                 <Table>
@@ -348,27 +287,24 @@ export default function TournamentViewPage() {
                                     </TableHeader>
                                     <TableBody>
                                       {(() => {
-                                        const matchPeriodSecs = (gameFormat?.periodDuration ?? 0) * 60
-                                        const matchPlanValues = players.map((p: any) => planPeriodsByMatch[match.id]?.[p.id] ?? 0)
-                                        const matchPlanMin = matchPlanValues.length ? Math.min(...matchPlanValues) : 0
-                                        const matchPlanMax = matchPlanValues.length ? Math.max(...matchPlanValues) : 0
+                                        const matchValues = players.map((p: any) => matchTimes[p.id]?.total ?? 0)
+                                        const matchMin = matchValues.length ? Math.min(...matchValues) : 0
+                                        const matchMax = matchValues.length ? Math.max(...matchValues) : 0
                                         return players.map((player: any) => {
-                                          const actualTime = matchTimes[player.id]?.total || 0
-                                          const planned = planPeriodsByMatch[match.id]?.[player.id] ?? 0
-                                          const display = actualTime > 0 ? formatTime(actualTime) : planned > 0 && matchPeriodSecs > 0 ? formatTime(planned * matchPeriodSecs) : '—'
+                                          const playerTime = matchTimes[player.id]?.total || 0
+                                          const display = playerTime > 0 ? formatTime(playerTime) : '—'
                                           return (
                                           <TableRow key={player.id}>
                                             <TableCell className="font-medium">{player.name}</TableCell>
                                             <TableCell
                                               className="text-right font-mono font-semibold"
-                                              style={{ color: courtTimeColor(planned, matchPlanMin, matchPlanMax) }}
+                                              style={{ color: courtTimeColor(playerTime, matchMin, matchMax) }}
                                             >
                                               {display}
                                             </TableCell>
                                             {positions.map((p: any) => {
-                                              const actualPosTime = matchTimes[player.id]?.positions[p.abbreviation] || 0
-                                              const plannedPos = planPositionsByMatch[match.id]?.[player.id]?.[p.abbreviation] ?? 0
-                                              const posDisplay = actualPosTime > 0 ? formatTime(actualPosTime) : plannedPos > 0 && matchPeriodSecs > 0 ? formatTime(plannedPos * matchPeriodSecs) : '—'
+                                              const posTime = matchTimes[player.id]?.positions[p.abbreviation] || 0
+                                              const posDisplay = posTime > 0 ? formatTime(posTime) : '—'
                                               return (
                                                 <TableCell key={p.id} className="text-right font-mono">
                                                   {posDisplay}
@@ -388,7 +324,7 @@ export default function TournamentViewPage() {
                                     const grid = planGridByMatch[match.id] ?? {}
                                     return (
                                         <div className="mt-4 border-t pt-4">
-                                            <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Period-by-period plan</h4>
+                                            <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Planned starting lineups by period</h4>
                                             <div className="overflow-x-auto">
                                                 <Table>
                                                     <TableHeader>

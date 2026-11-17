@@ -162,7 +162,7 @@ tournaments.post('/:id/generate', async (c) => {
   const matchIds: string[] = Array.from({ length: numberOfGames }, () => uuidv4())
   const now = new Date().toISOString()
 
-  // Build atomic batch: matches + tournament links + match plans
+  // Build atomic batch: matches + tournament links + planned starting lineups (plan sub_events)
   const stmts = [
     ...matchIds.map((matchId, i) =>
       c.env.DB.prepare(
@@ -174,11 +174,17 @@ tournaments.post('/:id/generate', async (c) => {
         'INSERT OR IGNORE INTO tournament_matches (tournament_id, match_id) VALUES (?, ?)'
       ).bind(tournamentId, matchId)
     ),
-    ...plans.map((plan) =>
-      c.env.DB.prepare(
-        'INSERT INTO match_plans (id, match_id, user_id, quarter, player_positions) VALUES (?, ?, ?, ?, ?)'
-      ).bind(uuidv4(), matchIds[plan.matchIndex], userId, plan.quarter, JSON.stringify(plan.playerPositions))
-    ),
+    // One multi-row INSERT per period (≤ 7 rows × 8 params, under D1's 100-param limit)
+    ...plans
+      .filter(plan => plan.playerPositions.length > 0)
+      .map((plan) =>
+        c.env.DB.prepare(
+          'INSERT INTO sub_events (id, match_id, user_id, period, seconds_elapsed, player_id, position_abbr, kind) VALUES ' +
+            plan.playerPositions.map(() => "(?, ?, ?, ?, 0, ?, ?, 'plan')").join(', ')
+        ).bind(...plan.playerPositions.flatMap(pp =>
+          [uuidv4(), matchIds[plan.matchIndex], userId, plan.quarter, pp.playerId, pp.position]
+        ))
+      ),
   ]
 
   await c.env.DB.batch(stmts)

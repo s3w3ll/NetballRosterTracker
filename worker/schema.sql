@@ -74,4 +74,6 @@ CREATE TABLE IF NOT EXISTS sub_events (
   seconds_elapsed INTEGER NOT NULL DEFAULT 0,
   player_id       TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
   position_abbr   TEXT  -- NULL means player is going to bench
+  -- kind ('plan' | 'actual') is added by migrations/0001_sub_events_kind.sql —
+  -- after applying this file, run `npm run db:migrate` (or db:migrate:remote).
 );

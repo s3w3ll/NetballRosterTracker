@@ -124,6 +124,9 @@ export function normalizeMatchPlan(raw: any): MatchPlan {
   }
 }
 
+/** plan = from the plan editor / scheduler; actual = recorded by the live game tracker */
+export type SubEventKind = 'plan' | 'actual'
+
 export interface SubEvent {
   id: string
   matchId: string
@@ -131,6 +134,7 @@ export interface SubEvent {
   secondsElapsed: number
   playerId: string
   positionAbbr: string | null  // null = bench
+  kind: SubEventKind
 }
 
 export function normalizeSubEvent(raw: any): SubEvent {
@@ -141,6 +145,7 @@ export function normalizeSubEvent(raw: any): SubEvent {
     secondsElapsed: raw.seconds_elapsed,
     playerId: raw.player_id,
     positionAbbr: raw.position_abbr ?? null,
+    kind: raw.kind === 'actual' ? 'actual' : 'plan',
   }
 }
 

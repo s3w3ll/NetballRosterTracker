@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { v4 as uuidv4 } from 'uuid'
 import type { Env, Variables } from '../index'
-import { generateTournamentPlans } from '../lib/scheduler'
+import { generateTournamentPlans, inferPositionGroup } from '../lib/scheduler'
 
 const tournaments = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -11,7 +11,22 @@ tournaments.get('/', async (c) => {
     `SELECT t.*, (SELECT COUNT(*) FROM tournament_matches tm WHERE tm.tournament_id = t.id) AS match_count
      FROM tournaments t WHERE t.user_id = ? ORDER BY t.created_at DESC`
   ).bind(userId).all()
-  return c.json(rows.results)
+
+  // Include each tournament's match ids so clients can tell which tournament a game belongs to
+  const links = await c.env.DB.prepare(
+    `SELECT tm.tournament_id, tm.match_id FROM tournament_matches tm
+     INNER JOIN tournaments t ON t.id = tm.tournament_id WHERE t.user_id = ?`
+  ).bind(userId).all()
+  const idsByTournament = new Map<string, string[]>()
+  for (const r of links.results as Array<{ tournament_id: string; match_id: string }>) {
+    if (!idsByTournament.has(r.tournament_id)) idsByTournament.set(r.tournament_id, [])
+    idsByTournament.get(r.tournament_id)!.push(r.match_id)
+  }
+
+  return c.json(rows.results.map((t: Record<string, unknown>) => ({
+    ...t,
+    matchIds: idsByTournament.get(t.id as string) ?? [],
+  })))
 })
 
 tournaments.post('/', async (c) => {
@@ -150,9 +165,8 @@ tournaments.post('/:id/generate', async (c) => {
   const positions = (positionsResult.results as Array<{ abbreviation: string; position_group: string | null }>)
     .map(p => ({
       abbreviation: p.abbreviation,
-      // Fall back to inferring group from abbreviation (e.g. "A1" → "A") when position_group
-      // is not stored in DB — covers all existing records created before position_group was written
-      positionGroup: p.position_group ?? (p.abbreviation.match(/^([ACD])\d+$/i)?.[1].toUpperCase() ?? null),
+      // Infer group from abbreviation (e.g. "A1" → "A") for records created before position_group was stored
+      positionGroup: inferPositionGroup(p.abbreviation, p.position_group),
     }))
 
   // Generate all period plans via greedy scheduler
@@ -190,6 +204,73 @@ tournaments.post('/:id/generate', async (c) => {
   await c.env.DB.batch(stmts)
 
   return c.json({ matchIds }, 201)
+})
+
+// PUT /api/tournaments/:id/replan
+// Replaces the plan for the given unplayed periods across the tournament in one
+// atomic batch. Refuses (409) if any target period already has live (actual) events,
+// so a replan computed before a quarter started can't overwrite what happened.
+tournaments.put('/:id/replan', async (c) => {
+  const userId = c.get('userId')
+  const { id: tournamentId } = c.req.param()
+  const body = await c.req.json<{
+    matches: Array<{
+      matchId: string
+      periods: number[]
+      lineups: Array<{ period: number; playerId: string; positionAbbr: string }>
+    }>
+  }>()
+
+  const tournament = await c.env.DB.prepare(
+    'SELECT id FROM tournaments WHERE id = ? AND user_id = ?'
+  ).bind(tournamentId, userId).first()
+  if (!tournament) return c.json({ error: 'Not found' }, 404)
+
+  const memberRows = await c.env.DB.prepare(
+    'SELECT match_id FROM tournament_matches WHERE tournament_id = ?'
+  ).bind(tournamentId).all()
+  const members = new Set(memberRows.results.map((r: Record<string, unknown>) => r.match_id as string))
+
+  for (const m of body.matches) {
+    if (!members.has(m.matchId)) return c.json({ error: `Match ${m.matchId} is not in this tournament` }, 400)
+    if (m.lineups.some(l => !m.periods.includes(l.period))) {
+      return c.json({ error: 'Every lineup period must be listed in periods' }, 400)
+    }
+  }
+
+  // Guard against overwriting quarters that have been played since the replan was computed
+  for (const m of body.matches) {
+    if (m.periods.length === 0) continue
+    const played = await c.env.DB.prepare(
+      `SELECT DISTINCT period FROM sub_events WHERE match_id = ? AND kind = 'actual' AND period IN (${m.periods.map(() => '?').join(', ')})`
+    ).bind(m.matchId, ...m.periods).all()
+    if (played.results.length > 0) {
+      return c.json({ error: 'Some of these quarters have been played since the replan was calculated. Refresh and try again.' }, 409)
+    }
+  }
+
+  const stmts: D1PreparedStatement[] = []
+  for (const m of body.matches) {
+    for (const period of m.periods) {
+      stmts.push(
+        c.env.DB.prepare(
+          "DELETE FROM sub_events WHERE match_id = ? AND user_id = ? AND period = ? AND kind = 'plan'"
+        ).bind(m.matchId, userId, period)
+      )
+      const rows = m.lineups.filter(l => l.period === period)
+      if (rows.length === 0) continue
+      // One multi-row INSERT per period (≤ 7 rows × 6 params, under D1's 100-param limit)
+      stmts.push(
+        c.env.DB.prepare(
+          'INSERT INTO sub_events (id, match_id, user_id, period, seconds_elapsed, player_id, position_abbr, kind) VALUES ' +
+            rows.map(() => "(?, ?, ?, ?, 0, ?, ?, 'plan')").join(', ')
+        ).bind(...rows.flatMap(r => [uuidv4(), m.matchId, userId, period, r.playerId, r.positionAbbr]))
+      )
+    }
+  }
+  if (stmts.length > 0) await c.env.DB.batch(stmts)
+
+  return c.json({ periods: body.matches.reduce((n, m) => n + m.periods.length, 0) })
 })
 
 export default tournaments

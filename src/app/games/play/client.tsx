@@ -9,6 +9,7 @@ import { useMatchPlansMultiple } from '@/api/hooks/use-match-plans-multiple';
 import { useSubEvents } from '@/api/hooks/use-sub-events';
 import SubEventPanel from '@/app/games/play/components/SubEventPanel';
 import PlanGuidePanel from '@/app/games/play/components/PlanGuidePanel';
+import ReplanDialog from '@/components/shared/ReplanDialog';
 import MatchPlanEditor from '@/app/games/play/components/MatchPlanEditor';
 import { useTournaments } from '@/api/hooks/use-tournaments';
 import { applyLiveMoves, type LiveMoveEvent } from '@/lib/live-subs';
@@ -102,7 +103,12 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   // Planned subs the coach chose not to make (keys like "2:300"); persisted with the live session
   const [skippedPlanSubs, setSkippedPlanSubs] = useState<string[]>([])
 
-  const { data: allSubEvents, create: createSubEvent, update: updateSubEvent, remove: removeSubEvent, bulkCreate: bulkCreateSubEvents } = useSubEvents(match.id)
+  const { data: allSubEvents, create: createSubEvent, update: updateSubEvent, remove: removeSubEvent, bulkCreate: bulkCreateSubEvents, refetch: refetchSubEvents } = useSubEvents(match.id)
+
+  // If this game is part of a tournament, the coach can replan the rest of it from here
+  const { data: tournaments } = useTournaments()
+  const parentTournament = useMemo(() => tournaments?.find(t => t.matchIds.includes(match.id)) ?? null, [tournaments, match.id])
+  const [isReplanOpen, setIsReplanOpen] = useState(false)
   // The live tracker records and lists only what actually happened; the plan is separate.
   const subEvents = useMemo(() => allSubEvents?.filter(e => e.kind === 'actual') ?? null, [allSubEvents])
 
@@ -477,6 +483,22 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
       onApply={moves => { recordMoves(moves); setSelectedPlayerId(null) }}
       onSkip={key => setSkippedPlanSubs(prev => [...prev, key])}
     />
+    {parentTournament && (
+      <>
+        <div className="flex justify-end mb-3 md:mb-4">
+          <Button size="sm" variant="outline" onClick={() => setIsReplanOpen(true)}>
+            <RefreshCw className="h-3 w-3 mr-1" />
+            Replan rest of {parentTournament.name}
+          </Button>
+        </div>
+        <ReplanDialog
+          tournamentId={parentTournament.id}
+          open={isReplanOpen}
+          onOpenChange={setIsReplanOpen}
+          onApplied={() => refetchSubEvents()}
+        />
+      </>
+    )}
     <div className="flex flex-col md:flex-row gap-6 items-start">
 
       {/* ── Court (left, 60% of page width) ────────────────────── */}

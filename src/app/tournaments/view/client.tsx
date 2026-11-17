@@ -13,7 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { PlusCircle, BarChart2, Trash2, Eye, EyeOff } from 'lucide-react';
+import { PlusCircle, BarChart2, Trash2, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import ReplanDialog from '@/components/shared/ReplanDialog';
 import Link from 'next/link';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { getNavId, setNavId } from '@/lib/nav';
@@ -74,6 +75,8 @@ export default function TournamentViewPage() {
 
     const [allSubEvents, setAllSubEvents] = useState<SubEvent[]>([]);
     const [areSubEventsLoading, setAreSubEventsLoading] = useState(false);
+    const [subEventsVersion, setSubEventsVersion] = useState(0);
+    const [isReplanOpen, setIsReplanOpen] = useState(false);
 
     useEffect(() => {
         if (matches.length === 0) return;
@@ -82,7 +85,7 @@ export default function TournamentViewPage() {
             .then(results => setAllSubEvents(results.flat().map(normalizeSubEvent)))
             .catch(() => setAllSubEvents([]))
             .finally(() => setAreSubEventsLoading(false));
-    }, [matches, getIdToken]);
+    }, [matches, getIdToken, subEventsVersion]);
 
     // Per match: actual (live) time for quarters that have been played, planned time for the rest.
     const matchProjections = useMemo(() => {
@@ -198,6 +201,10 @@ export default function TournamentViewPage() {
                 <p className="text-muted-foreground">Review stats for this tournament.</p>
                 </div>
                 <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setIsReplanOpen(true)} disabled={matches.length === 0}>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Replan
+                    </Button>
                     <Button onClick={handleAddMatch}>
                         <PlusCircle className="mr-2 h-4 w-4" />
                         Add Match
@@ -208,6 +215,13 @@ export default function TournamentViewPage() {
                     </Button>
                 </div>
             </div>
+
+            <ReplanDialog
+                tournamentId={tournament.id}
+                open={isReplanOpen}
+                onOpenChange={setIsReplanOpen}
+                onApplied={() => setSubEventsVersion(v => v + 1)}
+            />
 
             <Card className="mb-8">
                 <CardHeader>

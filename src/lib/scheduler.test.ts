@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateTournamentPlans } from '../../worker/src/lib/scheduler'
+import { generateTournamentPlans, replanTournament } from '../../worker/src/lib/scheduler'
 
 const sevenAside = ['GS', 'GA', 'WA', 'C', 'WD', 'GD', 'GK'].map(a => ({
   abbreviation: a,
@@ -196,5 +196,73 @@ describe('generateTournamentPlans', () => {
     for (const v of Object.values(counts)) {
       expect(v).toBe(7)
     }
+  })
+})
+
+describe('replanTournament', () => {
+  const allPeriods = [1, 2, 3, 4]
+  const courtTotals = (plans: ReturnType<typeof replanTournament>) => {
+    const t: Record<string, number> = {}
+    for (const plan of plans) for (const pp of plan.playerPositions) t[pp.playerId] = (t[pp.playerId] ?? 0) + 1
+    return t
+  }
+
+  it('with no history, matches generateTournamentPlans exactly', () => {
+    const players = makePlayers(9)
+    expect(replanTournament(players, sixAside, 4, [{ openPeriods: allPeriods }, { openPeriods: allPeriods }]))
+      .toEqual(generateTournamentPlans(players, sixAside, 4, 2))
+  })
+
+  it('only plans open periods, keeping the 1-based quarter numbers', () => {
+    const plans = replanTournament(makePlayers(8), sevenAside, 4, [{ openPeriods: [3, 4] }])
+    expect(plans.map(p => p.quarter)).toEqual([3, 4])
+  })
+
+  it('a player who missed game 1 is made up for across the rest of the tournament', () => {
+    // 8 players, 7-aside, 3 games. Game 1 was played: p0 sat out all 4 quarters, p1–p7 played 4 each.
+    const players = makePlayers(8)
+    const played: Record<string, Record<string, number>> = {}
+    sevenAside.forEach((pos, i) => { played[`p${i + 1}`] = { [pos.abbreviation]: 4 } })
+
+    const plans = replanTournament(players, sevenAside, 4, [
+      { openPeriods: [], played },
+      { openPeriods: allPeriods },
+      { openPeriods: allPeriods },
+    ])
+    expect(plans.every(p => p.matchIndex !== 0)).toBe(true)
+
+    const remaining = courtTotals(plans)
+    // Fair share is 84 slots / 8 = 10.5 quarters, but p0 can play at most the 8 remaining —
+    // so p0 should get every remaining quarter (closest possible to equity)...
+    expect(remaining.p0).toBe(8)
+    // ...and everyone else shares the rest evenly (final totals within 1 quarter of each other)
+    const others = players.filter(p => p.id !== 'p0').map(p => (remaining[p.id] ?? 0) + 4)
+    expect(Math.max(...others) - Math.min(...others)).toBeLessThanOrEqual(1)
+  })
+
+  it('counts fractional live time (mid-quarter subs) towards equity', () => {
+    // 8 players, one game, Q1–Q2 played. p0 only got half a quarter; everyone else ~2 quarters.
+    const players = makePlayers(8)
+    const played: Record<string, Record<string, number>> = { p0: { GS: 0.5 } }
+    for (let i = 1; i < 8; i++) played[`p${i}`] = { [sevenAside[(i - 1) % 7].abbreviation]: i === 1 ? 1.5 : 2 }
+    const plans = replanTournament(players, sevenAside, 4, [{ openPeriods: [3, 4], played }])
+    const remaining = courtTotals(plans)
+    expect(remaining.p0).toBe(2) // plays both remaining quarters
+  })
+
+  it('respects the per-game cap including time already played in that game', () => {
+    // 10 players / 7 positions / 4 quarters → cap of 2 quarters per game.
+    const players = makePlayers(10)
+    const played = { p0: { GS: 2 } } // p0 already at the cap in this game
+    const plans = replanTournament(players, sevenAside, 4, [{ openPeriods: [3, 4], played }])
+    // Plenty of players are under the cap, so p0 should rest
+    expect(courtTotals(plans).p0 ?? 0).toBe(0)
+  })
+
+  it('ignores history for unknown players and positions', () => {
+    const plans = replanTournament(makePlayers(7), sevenAside, 4, [
+      { openPeriods: [1], played: { ghost: { GS: 3 }, p0: { XX: 3 } } },
+    ])
+    expect(plans[0].playerPositions).toHaveLength(7)
   })
 })

@@ -10,11 +10,8 @@ import { useSubEvents } from '@/api/hooks/use-sub-events';
 import SubEventPanel from '@/app/games/play/components/SubEventPanel';
 import MatchPlanEditor from '@/app/games/play/components/MatchPlanEditor';
 import { useTournaments } from '@/api/hooks/use-tournaments';
-import { v4 as uuidv4 } from 'uuid'
-import {
-  createSubEventNonBlocking,
-  bulkCreateSubEventsNonBlocking,
-} from '@/firebase/non-blocking-updates';
+import { applyLiveMove } from '@/lib/live-subs';
+import { loadLiveSession, saveLiveSession, catchUpLiveSession } from '@/lib/live-session';
 import {
   Table,
   TableBody,
@@ -92,11 +89,28 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   const dragJustFinished = useRef(false)
   const periodStartTime = useRef<number | null>(null);
   const periodDuration = useRef<number>(0);
+  // Latest clock value for the interval effect, so resuming after a pause continues from here
+  const timeRef = useRef(time);
+  timeRef.current = time;
 
-  const { getIdToken } = useFirebase()
-  const initialLineupStamped = useRef(false)
+  const { toast } = useToast()
+  // Initialisation happens once per match; persistence only starts after restored state is applied
+  const sessionInitStarted = useRef(false)
+  const [sessionLoaded, setSessionLoaded] = useState(false)
 
-  const { data: subEvents, create: createSubEvent, update: updateSubEvent, remove: removeSubEvent } = useSubEvents(match.id)
+  const { data: subEvents, create: createSubEvent, update: updateSubEvent, remove: removeSubEvent, bulkCreate: bulkCreateSubEvents } = useSubEvents(match.id)
+
+  /** Records sub events; on failure tells the coach so they can re-add it from the list. */
+  const saveEvents = useCallback((events: Array<{ period: number; secondsElapsed: number; playerId: string; positionAbbr: string | null }>) => {
+    if (events.length === 0) return
+    bulkCreateSubEvents(events).catch((err: Error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Substitution not saved',
+        description: `${err.message}. The court is updated, but add this sub again from the substitutions list so playing time stays correct.`,
+      })
+    })
+  }, [bulkCreateSubEvents, toast])
 
   const onCourtPlayerIds = useMemo(() => Object.values(courtPositions).filter(Boolean) as string[], [courtPositions]);
 
@@ -125,30 +139,49 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 }, [courtPositions, isActive]);
 
 
+  // Initialise once: restore an in-progress game from this device, or start fresh.
+  // Restoring (rather than starting empty) is what stops a reload mid-game from
+  // resetting to Q1 and re-recording the starting lineup.
   useEffect(() => {
-    if (players && positions) {
-      const initialTimeInPosition = players.reduce((acc, player) => ({
-        ...acc,
-        [player.id]: positions.reduce((posAcc, pos) => ({ ...posAcc, [pos.abbreviation]: 0 }), {})
-      }), {});
-      setPlayerTimeInPosition(initialTimeInPosition);
-    }
-  }, [players, positions]);
+    if (sessionInitStarted.current || !gameFormat || !positions?.length) return
+    sessionInitStarted.current = true
 
-  useEffect(() => {
-    if (gameFormat) {
-      const durationSeconds = gameFormat.periodDuration * 60;
-      periodDuration.current = durationSeconds;
-      setTime(durationSeconds);
-    }
-  }, [gameFormat]);
+    const durationSeconds = gameFormat.periodDuration * 60
+    periodDuration.current = durationSeconds
+    const emptyCourt: Record<string, string | null> = Object.fromEntries(positions.map((p: any) => [p.abbreviation, null]))
 
-  useEffect(() => {
-      if (positions) {
-          const initialPositions = positions.reduce((acc, pos) => ({ ...acc, [pos.abbreviation]: null }), {});
-          setCourtPositions(initialPositions);
+    const saved = loadLiveSession(match.id)
+    if (saved) {
+      const s = catchUpLiveSession(saved, Date.now())
+      const restoredCourt = { ...emptyCourt }
+      for (const [pos, pid] of Object.entries(s.courtPositions)) {
+        if (pos in restoredCourt) restoredCourt[pos] = pid
       }
-  }, [positions]);
+      setCourtPositions(restoredCourt)
+      setCurrentPeriod(s.period)
+      setTime(s.remaining)
+      setPlayerTimeInPosition(s.playerTimeInPosition)
+      setIsActive(s.isActive)
+    } else {
+      setCourtPositions(emptyCourt)
+      setTime(durationSeconds)
+      setPlayerTimeInPosition({})
+    }
+    setSessionLoaded(true)
+  }, [gameFormat, positions, match.id])
+
+  // Persist the live game on every change (clock ticks included) so it survives a reload.
+  useEffect(() => {
+    if (!sessionLoaded) return
+    saveLiveSession(match.id, {
+      period: currentPeriod,
+      courtPositions,
+      remaining: time,
+      isActive,
+      playerTimeInPosition,
+      savedAt: Date.now(),
+    })
+  }, [sessionLoaded, match.id, currentPeriod, courtPositions, time, isActive, playerTimeInPosition])
 
   useEffect(() => {
     if (isActive) {
@@ -156,7 +189,9 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
           lastUpdateTime.current = Date.now();
       }
       if (periodStartTime.current === null) {
-          periodStartTime.current = Date.now();
+          // Anchor to the time already played this period — otherwise resuming after
+          // a pause would restart the clock from the full period duration.
+          periodStartTime.current = Date.now() - (periodDuration.current - timeRef.current) * 1000;
       }
       intervalRef.current = setInterval(() => {
         const now = Date.now();
@@ -190,27 +225,6 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
   }, [isActive, updatePlayerTimes]);
 
   useEffect(() => {
-    if (initialLineupStamped.current) return
-    const hasPlayers = Object.values(courtPositions).some(Boolean)
-    if (!hasPlayers) return
-
-    initialLineupStamped.current = true
-    const startingEvents = Object.entries(courtPositions)
-      .filter(([, playerId]) => playerId !== null)
-      .map(([positionAbbr, playerId]) => ({
-        id: uuidv4(),
-        period: 1,
-        secondsElapsed: 0,
-        playerId: playerId!,
-        positionAbbr,
-      }))
-
-    if (startingEvents.length > 0) {
-      bulkCreateSubEventsNonBlocking(match.id, startingEvents, getIdToken)
-    }
-  }, [courtPositions, match.id, getIdToken])
-
-  useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
     check()
     window.addEventListener('resize', check)
@@ -236,17 +250,15 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
 
     const nextPeriod = currentPeriod + 1
 
-    const startingLineupEvents = Object.entries(courtPositions)
+    // Each period is calculated independently, so the carried-over lineup must be recorded at 0:00
+    saveEvents(Object.entries(courtPositions)
       .filter(([, playerId]) => playerId !== null)
       .map(([positionAbbr, playerId]) => ({
-        id: uuidv4(),
         period: nextPeriod,
         secondsElapsed: 0,
         playerId: playerId!,
         positionAbbr,
-      }))
-
-    bulkCreateSubEventsNonBlocking(match.id, startingLineupEvents, getIdToken)
+      })))
 
     setCurrentPeriod(nextPeriod)
     setTime(gameFormat.periodDuration * 60)
@@ -297,36 +309,22 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
     }
 
     // Place or swap
-    updatePlayerTimes()
-    const secondsElapsed = gameFormat ? gameFormat.periodDuration * 60 - time : 0
-    const captured = selectedPlayerId
-
-    setCourtPositions(prev => {
-      const newPositions = { ...prev }
-      const oldPosOfSelected = Object.keys(newPositions).find(p => newPositions[p] === captured)
-
-      // If selected player was on court, move the occupant to their old position
-      if (oldPosOfSelected) {
-        newPositions[oldPosOfSelected] = occupantId ?? null
-        if (occupantId) {
-          createSubEventNonBlocking(match.id, {
-            id: uuidv4(), period: currentPeriod, secondsElapsed,
-            playerId: occupantId, positionAbbr: oldPosOfSelected,
-          }, getIdToken)
-        }
-      }
-
-      // Place selected player at tapped position
-      newPositions[positionAbbr] = captured
-      createSubEventNonBlocking(match.id, {
-        id: uuidv4(), period: currentPeriod, secondsElapsed,
-        playerId: captured, positionAbbr,
-      }, getIdToken)
-
-      return newPositions
-    })
-
+    recordMove(selectedPlayerId, positionAbbr)
     setSelectedPlayerId(null)
+  }
+
+  /**
+   * Applies a court move and records exactly the sub events needed to reproduce it
+   * (including benching a replaced occupant). Side effects run here, not inside a
+   * state updater, so React can't run them twice.
+   */
+  const recordMove = (playerId: string, target: string | null) => {
+    const { court, events } = applyLiveMove(courtPositions, playerId, target)
+    if (events.length === 0) return
+    updatePlayerTimes()
+    const secondsElapsed = Math.max(0, periodDuration.current - time)
+    setCourtPositions(court)
+    saveEvents(events.map(e => ({ period: currentPeriod, secondsElapsed, ...e })))
   }
 
   const handleDragStart = (e: DragEvent<HTMLDivElement>, playerId: string) => {
@@ -344,71 +342,14 @@ function LiveGameTracker({ match, gameFormat, positions, players }: { match: any
     e.preventDefault()
     const playerId = e.dataTransfer.getData('playerId')
     if (!playerId) return
-
-    updatePlayerTimes()
-
-    const secondsElapsed = gameFormat
-      ? gameFormat.periodDuration * 60 - time
-      : 0
-
-    setCourtPositions(prev => {
-      const newPositions = { ...prev }
-      const currentOccupantId = newPositions[positionAbbr]
-      const oldPosOfDraggedPlayer = Object.keys(newPositions).find(p => newPositions[p] === playerId)
-
-      if (oldPosOfDraggedPlayer) {
-        newPositions[oldPosOfDraggedPlayer] = currentOccupantId
-        if (currentOccupantId) {
-          createSubEventNonBlocking(match.id, {
-            id: uuidv4(),
-            period: currentPeriod,
-            secondsElapsed,
-            playerId: currentOccupantId,
-            positionAbbr: oldPosOfDraggedPlayer,
-          }, getIdToken)
-        }
-      }
-
-      newPositions[positionAbbr] = playerId
-
-      createSubEventNonBlocking(match.id, {
-        id: uuidv4(),
-        period: currentPeriod,
-        secondsElapsed,
-        playerId,
-        positionAbbr,
-      }, getIdToken)
-
-      return newPositions
-    })
+    recordMove(playerId, positionAbbr)
   }
 
   const handleBenchDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     const playerId = e.dataTransfer.getData('playerId')
     if (!playerId) return
-
-    updatePlayerTimes()
-
-    const secondsElapsed = gameFormat
-      ? gameFormat.periodDuration * 60 - time
-      : 0
-
-    setCourtPositions(prev => {
-      const newPositions = { ...prev }
-      const oldPosOfDraggedPlayer = Object.keys(newPositions).find(p => newPositions[p] === playerId)
-      if (oldPosOfDraggedPlayer) {
-        newPositions[oldPosOfDraggedPlayer] = null
-        createSubEventNonBlocking(match.id, {
-          id: uuidv4(),
-          period: currentPeriod,
-          secondsElapsed,
-          playerId,
-          positionAbbr: null,
-        }, getIdToken)
-      }
-      return newPositions
-    })
+    recordMove(playerId, null)
     setSelectedPlayerId(null)
   }
 
